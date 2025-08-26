@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__playwright__browser_install",
+      "Bash(source:*)",
+      "Bash(timeout:*)",
+      "Bash(python:*)",
+      "Bash(chmod:*)",
+      "Bash(./start.sh:*)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_type",
+      "mcp__playwright__browser_click",
+      "Bash(pkill:*)",
+      "Bash(cp:*)",
+      "Bash(playwright install:*)",
+      "WebFetch(domain:docs.bigmodel.cn)",
+      "Bash(rm:*)",
+      "Bash(curl -s http://localhost:8088/dashboard/list/)",
+      "Bash(curl:*)",
+      "Bash(mkdir:*)",
+      "Bash(pip:*)",
+      "WebFetch(domain:superset.apache.org)",
+      "Bash(cat:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
