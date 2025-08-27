@@ -28,7 +28,7 @@ load_dotenv()
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
     handlers=[
         logging.FileHandler('superset_automation.log'),
         logging.StreamHandler()
@@ -241,6 +241,112 @@ class SupersetAutomation:
             logger.error(f"❌ Login failed: {e}")
             return False
     
+    async def get_dashboard_charts_api(self, dashboard_id):
+        """Get chart information for a specific dashboard using Superset API"""
+        try:
+            logger.info(f"📊 Getting charts for dashboard {dashboard_id} from API...")
+            
+            # Use Superset API endpoint for dashboard charts
+            api_url = f"{self.superset_url}/api/v1/dashboard/{dashboard_id}/charts"
+            
+            # Prepare headers with authentication if we have session cookies
+            headers = {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            }
+            
+            # Add session cookies if available
+            cookies = {}
+            if self.session_cookies:
+                for cookie in self.session_cookies:
+                    cookies[cookie['name']] = cookie['value']
+            
+            # Make API request
+            response = requests.get(api_url, headers=headers, cookies=cookies, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Extract chart information from API response
+                charts = []
+                
+                # Handle different possible response formats
+                if 'result' in data:
+                    # Standard Superset API response format
+                    chart_items = data['result']
+                elif 'charts' in data:
+                    # Alternative format
+                    chart_items = data['charts']
+                else:
+                    # Direct list
+                    chart_items = data if isinstance(data, list) else []
+                
+                for chart in chart_items:
+                    # Extract chart information
+                    chart_id = chart.get('id')
+                    chart_name = chart.get('slice_name', chart.get('name', chart.get('chart_name', f'Chart_{chart_id}')))
+                    visualization_type = chart.get('viz_type', 'unknown')
+                    description = chart.get('description', '')
+                    
+                    charts.append({
+                        'id': chart_id,
+                        'name': chart_name,
+                        'slice_name': chart_name,
+                        'viz_type': visualization_type,
+                        'description': description,
+                        'dashboard_id': dashboard_id
+                    })
+                
+                logger.info(f"✅ Found {len(charts)} charts via API for dashboard {dashboard_id}")
+                
+                # Log chart information
+                logger.info("=" * 80)
+                logger.info(f"Charts for Dashboard {dashboard_id}:")
+                logger.info("=" * 80)
+                logger.info(f"{'Chart ID':<10} {'Chart Name':<40} {'Type'}")
+                logger.info("-" * 80)
+                
+                for chart in charts:
+                    chart_id = chart.get('id', 'N/A')
+                    chart_name = chart.get('name', 'N/A')
+                    viz_type = chart.get('viz_type', 'N/A')
+                    logger.info(f"{chart_id:<10} {chart_name:<40} {viz_type}")
+                
+                logger.info("=" * 80)
+                
+                return charts
+                
+            elif response.status_code == 401:
+                logger.warning("⚠️ Authentication required, trying to login...")
+                
+                # Try to login and retry
+                if await self.login_to_superset():
+                    # Retry with fresh session
+                    return await self.get_dashboard_charts_api(dashboard_id)
+                else:
+                    logger.error("❌ Login failed, cannot get chart list")
+                    return []
+                    
+            elif response.status_code == 403:
+                logger.error("❌ Permission denied accessing chart API")
+                return []
+                
+            elif response.status_code == 404:
+                logger.warning(f"⚠️ Chart API endpoint not found for dashboard {dashboard_id}")
+                return []
+                
+            else:
+                logger.warning(f"⚠️ API request failed with status {response.status_code}")
+                return []
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"❌ API request failed: {e}")
+            return []
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get chart list: {e}")
+            return []
+
     async def get_dashboard_list(self):
         """Get real list of available dashboards from Superset API"""
         try:
@@ -531,7 +637,7 @@ class SupersetAutomation:
             
             # Try Superset's Download as Image functionality
             logger.info("🔄 Attempting Superset Download as Image...")
-            export_success = await self._export_dashboard_as_image(screenshot_filename)
+            export_success = await self._export_dashboard_as_image(screenshot_filename, dashboard['title'])
             
             if export_success:
                 logger.info(f"✅ Dashboard exported using Superset: {screenshot_path}")
@@ -632,13 +738,13 @@ class SupersetAutomation:
             logger.warning(f"⚠️ Could not extract chart name: {e}")
             return "Unknown_Chart"
     
-    async def _export_dashboard_as_image(self, filename):
+    async def _export_dashboard_as_image(self, filename, dashboard_title=None):
         """Export dashboard using Superset's native Download as Image functionality with improved download handling"""
         try:
             logger.info("🔄 Starting dashboard export with improved native functionality...")
             
             # Approach 1: Enhanced native export with proper download event handling
-            if await self._try_enhanced_native_export('dashboard', filename):
+            if await self._try_enhanced_native_export('dashboard', filename, dashboard_title):
                 return True
             
             # Approach 2: Standard export button (fallback)
@@ -664,192 +770,14 @@ class SupersetAutomation:
             logger.error(f"❌ Error in dashboard export: {e}")
             return False
     
-    async def _export_dashboard_as_csv(self, filename):
-        """Export dashboard using Superset's native CSV functionality with improved download handling"""
-        try:
-            logger.info("🔄 Starting dashboard CSV export with improved native functionality...")
-            
-            # Ensure we're on a dashboard page
-            await self._wait_for_dashboard_load()
-            
-            # Set up download listener BEFORE triggering download
-            download_path = os.path.join(self.screenshots_dir, filename)
-            
-            # Start download listener
-            download_task = asyncio.create_task(self._wait_for_download_event())
-            
-            # Try to find and click the dashboard export button
-            export_button_selectors = [
-                'button[aria-label*="actions"]',
-                '[data-test="header-actions-menu"]',
-                '.header-actions button',
-                '.dashboard-header button[aria-label*="menu"]',
-                '.ant-btn[aria-label*="actions"]'
-            ]
-            
-            export_button_clicked = False
-            for selector in export_button_selectors:
-                try:
-                    export_button = await self.page.wait_for_selector(selector, timeout=5000)
-                    if export_button:
-                        await export_button.click()
-                        logger.info(f"✅ Found and clicked dashboard export button: {selector}")
-                        export_button_clicked = True
-                        break
-                except:
-                    continue
-            
-            if not export_button_clicked:
-                logger.warning("⚠️ Could not find dashboard export button")
-                return False
-            
-            # Wait for menu to appear and navigate to Download submenu
-            await asyncio.sleep(1)
-            
-            # Click Download option
-            try:
-                download_option = await self.page.wait_for_selector('text="Download"', timeout=5000)
-                await download_option.click()
-                logger.info("✅ Found Download option: text=\"Download\"")
-            except:
-                logger.warning("⚠️ Could not find Download option")
-                return False
-            
-            # Wait for submenu to appear
-            await asyncio.sleep(1)
-            
-            # Check if CSV option is available and click it
-            try:
-                csv_option = await self.page.wait_for_selector('text="Export to .CSV"', timeout=5000)
-                is_visible = await csv_option.is_visible()
-                logger.info(f"   CSV option 'text=\"Export to .CSV\"' visible: {is_visible}")
-                
-                if is_visible:
-                    await csv_option.click()
-                    logger.info("✅ Selected CSV from submenu: text=\"Export to .CSV\"")
-                else:
-                    logger.warning("⚠️ CSV option not visible")
-                    return False
-                    
-            except Exception as e:
-                logger.warning(f"⚠️ Could not find CSV option: {e}")
-                return False
-            
-            # Wait for download to complete
-            try:
-                download_result = await asyncio.wait_for(download_task, timeout=30)
-                if download_result:
-                    logger.info(f"✅ Enhanced dashboard CSV export successful: {download_result}")
-                    return True
-                else:
-                    logger.warning("⚠️ Download event not detected")
-                    return False
-                    
-            except asyncio.TimeoutError:
-                logger.warning("⚠️ Download timeout")
-                return False
-            
-        except Exception as e:
-            logger.error(f"❌ Error in dashboard CSV export: {e}")
-            return False
-    
-    async def _export_dashboard_as_excel(self, filename):
-        """Export dashboard using Superset's native Excel functionality with improved download handling"""
-        try:
-            logger.info("🔄 Starting dashboard Excel export with improved native functionality...")
-            
-            # Ensure we're on a dashboard page
-            await self._wait_for_dashboard_load()
-            
-            # Set up download listener BEFORE triggering download
-            download_path = os.path.join(self.screenshots_dir, filename)
-            
-            # Start download listener
-            download_task = asyncio.create_task(self._wait_for_download_event())
-            
-            # Try to find and click the dashboard export button
-            export_button_selectors = [
-                'button[aria-label*="actions"]',
-                '[data-test="header-actions-menu"]',
-                '.header-actions button',
-                '.dashboard-header button[aria-label*="menu"]',
-                '.ant-btn[aria-label*="actions"]'
-            ]
-            
-            export_button_clicked = False
-            for selector in export_button_selectors:
-                try:
-                    export_button = await self.page.wait_for_selector(selector, timeout=5000)
-                    if export_button:
-                        await export_button.click()
-                        logger.info(f"✅ Found and clicked dashboard export button: {selector}")
-                        export_button_clicked = True
-                        break
-                except:
-                    continue
-            
-            if not export_button_clicked:
-                logger.warning("⚠️ Could not find dashboard export button")
-                return False
-            
-            # Wait for menu to appear and navigate to Download submenu
-            await asyncio.sleep(1)
-            
-            # Click Download option
-            try:
-                download_option = await self.page.wait_for_selector('text="Download"', timeout=5000)
-                await download_option.click()
-                logger.info("✅ Found Download option: text=\"Download\"")
-            except:
-                logger.warning("⚠️ Could not find Download option")
-                return False
-            
-            # Wait for submenu to appear
-            await asyncio.sleep(1)
-            
-            # Check if Excel option is available and click it
-            try:
-                excel_option = await self.page.wait_for_selector('text="Export to Excel"', timeout=5000)
-                is_visible = await excel_option.is_visible()
-                logger.info(f"   Excel option 'text=\"Export to Excel\"' visible: {is_visible}")
-                
-                if is_visible:
-                    await excel_option.click()
-                    logger.info("✅ Selected Excel from submenu: text=\"Export to Excel\"")
-                else:
-                    logger.warning("⚠️ Excel option not visible")
-                    return False
-                    
-            except Exception as e:
-                logger.warning(f"⚠️ Could not find Excel option: {e}")
-                return False
-            
-            # Wait for download to complete
-            try:
-                download_result = await asyncio.wait_for(download_task, timeout=30)
-                if download_result:
-                    logger.info(f"✅ Enhanced dashboard Excel export successful: {download_result}")
-                    return True
-                else:
-                    logger.warning("⚠️ Download event not detected")
-                    return False
-                    
-            except asyncio.TimeoutError:
-                logger.warning("⚠️ Download timeout")
-                return False
-            
-        except Exception as e:
-            logger.error(f"❌ Error in dashboard Excel export: {e}")
-            return False
-    
-    async def _try_enhanced_native_export(self, export_type, filename):
+    async def _try_enhanced_native_export(self, export_type, filename, dashboard_title=None):
         """Try enhanced native export with proper download event handling based on Playwright best practices"""
         try:
             logger.info(f"🔄 Trying enhanced native export for {export_type}...")
             
             # Ensure we're on a dashboard page
             if export_type == 'dashboard':
-                await self._wait_for_dashboard_load()
+                await self._wait_for_dashboard_load(dashboard_title)
             
             # Set up download listener BEFORE triggering download
             download_path = os.path.join(self.screenshots_dir, filename)
@@ -1188,9 +1116,6 @@ class SupersetAutomation:
                 if export_format == 'image':
                     if not await self._select_download_as_image():
                         return False
-                elif export_format == 'csv':
-                    if not await self._select_download_as_csv():
-                        return False
                 elif export_format == 'excel':
                     if not await self._select_download_as_excel():
                         return False
@@ -1226,120 +1151,7 @@ class SupersetAutomation:
             logger.error(f"❌ Enhanced chart export failed for {export_format}: {e}")
             return False
     
-    async def _select_download_as_csv(self):
-        """Select 'Export to .CSV' option from chart menu with submenu navigation"""
-        try:
-            selectors = self._get_superset_export_selectors()
-            csv_selectors = selectors.get('download_csv', [])
-            download_selectors = selectors.get('download_submenu', [])
-            
-            # Wait for dropdown menu to appear
-            await asyncio.sleep(1)
-            
-            # Debug: Log all visible menu items
-            logger.info("🔍 Debug: Checking available menu options...")
-            try:
-                menu_items = await self.page.query_selector_all('.ant-dropdown-menu-item, .dropdown-menu-item, .dropdown-item')
-                for i, item in enumerate(menu_items):
-                    text = await item.text_content()
-                    visible = await item.is_visible()
-                    logger.info(f"   Menu item {i}: '{text}' (visible: {visible})")
-            except Exception as debug_e:
-                logger.warning(f"⚠️ Could not debug menu items: {debug_e}")
-            
-            # STRATEGY 1: Try direct CSV selection (if visible)
-            for selector in csv_selectors:
-                try:
-                    logger.info(f"🔍 Trying CSV selector: {selector}")
-                    if await self.page.is_visible(selector, timeout=1000):
-                        await self.page.click(selector)
-                        logger.info(f"✅ Selected 'Export to CSV' option: {selector}")
-                        return True
-                    else:
-                        logger.info(f"⚠️ CSV selector not visible: {selector}")
-                except Exception as e:
-                    logger.info(f"⚠️ CSV selector failed: {selector} - {e}")
-                    continue
-            
-            # STRATEGY 2: Navigate through Download submenu
-            logger.info("📁 Trying Download submenu navigation...")
-            
-            # Find and click Download option to reveal submenu
-            for dl_selector in download_selectors:
-                try:
-                    download_element = await self.page.query_selector(dl_selector)
-                    if download_element and await download_element.is_visible():
-                        logger.info(f"✅ Found Download option: {dl_selector}")
-                        
-                        # Click Download to open submenu
-                        await download_element.click()
-                        await asyncio.sleep(1)  # Wait for submenu to appear
-                        
-                        # Now look for CSV in the revealed submenu
-                        for csv_selector in csv_selectors:
-                            try:
-                                csv_element = await self.page.query_selector(csv_selector)
-                                if csv_element:
-                                    # Check if it became visible after submenu opens
-                                    is_visible = await csv_element.is_visible()
-                                    logger.info(f"   CSV option '{csv_selector}' visible: {is_visible}")
-                                    
-                                    if is_visible:
-                                        await csv_element.click()
-                                        logger.info(f"✅ Selected CSV from submenu: {csv_selector}")
-                                        return True
-                                    else:
-                                        # Try to scroll into view and click anyway
-                                        await csv_element.scroll_into_view_if_needed()
-                                        await asyncio.sleep(0.5)
-                                        await csv_element.click()
-                                        logger.info(f"✅ Selected CSV from submenu (forced): {csv_selector}")
-                                        return True
-                            except Exception as e:
-                                logger.debug(f"   CSV selector {csv_selector} failed: {e}")
-                                continue
-                        break
-                except Exception as e:
-                    logger.debug(f"Download selector {dl_selector} failed: {e}")
-                    continue
-            
-            # STRATEGY 3: Try alternative approach - find CSV by text content
-            logger.info("🔍 Trying to find CSV by text content...")
-            try:
-                # Look for any element containing CSV text
-                csv_elements = await self.page.query_selector_all('*')
-                for element in csv_elements:
-                    try:
-                        text = await element.text_content()
-                        if text and 'CSV' in text and 'Export' in text:
-                            # Try to click if it's a menu item
-                            parent = await element.evaluate_handle("""(element) => {
-                                let parent = element;
-                                while (parent && parent.parentElement) {
-                                    parent = parent.parentElement;
-                                    if (parent.getAttribute && parent.getAttribute('role') === 'menuitem') {
-                                        return parent;
-                                    }
-                                }
-                                return null;
-                            }""")
-                            
-                            if parent:
-                                await parent.as_element().click()
-                                logger.info(f"✅ Selected CSV via text content: {text.strip()}")
-                                return True
-                    except:
-                        continue
-            except Exception as e:
-                logger.debug(f"Text content search failed: {e}")
-            
-            logger.warning("⚠️  CSV export option not found")
-            return False
-            
-        except Exception as e:
-            logger.error(f"❌ Error selecting CSV option: {e}")
-            return False
-    
+        
     async def _select_download_as_excel(self):
         """Select 'Export to Excel' option from chart menu with submenu navigation"""
         try:
@@ -1472,40 +1284,7 @@ class SupersetAutomation:
             logger.error(f"❌ Failed to get chart position: {e}")
             return None
 
-    async def _wait_for_dashboard_load(self):
-        """Wait for dashboard to fully load using improved waiting strategy"""
-        try:
-            logger.info("⏳ Waiting for dashboard to fully load...")
-            
-            # Wait for main dashboard container
-            await self.page.wait_for_selector('.dashboard, .ant-layout-content, [data-test="dashboard"]', 
-                                             state='visible', timeout=30000)
-            
-            # Wait for charts to load - improved version
-            await self.page.wait_for_function("""
-                () => {
-                    // Check if dashboard has meaningful content
-                    const containers = document.querySelectorAll('.chart-container, .visualization-container, .ant-card');
-                    if (containers.length === 0) return false;
-                    
-                    // Check if loading spinners are gone
-                    const spinners = document.querySelectorAll('.loading-spinner, .ant-spin, [data-test="loading"]');
-                    const visibleSpinners = Array.from(spinners).filter(spinner => {
-                        const style = window.getComputedStyle(spinner);
-                        return style.display !== 'none' && style.visibility !== 'hidden';
-                    });
-                    
-                    return visibleSpinners.length === 0;
-                }
-            """, timeout=60000)
-            
-            logger.info("✅ Dashboard fully loaded")
-            return True
-            
-        except Exception as e:
-            logger.warning(f"⚠️ Dashboard load wait incomplete: {e}")
-            return False
-
+    
     async def _try_standard_export(self, export_type, filename):
         """Try standard export button approach"""
         try:
@@ -1754,7 +1533,599 @@ class SupersetAutomation:
         except Exception as e:
             logger.error(f"❌ Failed to capture detailed dashboards: {e}")
             return []
-    
+
+    async def export_dashboard_charts_independently(self, dashboard, export_formats=['image', 'excel']):
+        """
+        Export all charts from a dashboard independently with specified formats
+        This method is decoupled from dashboard export functionality and uses real chart names from API
+        
+        Args:
+            dashboard: Dashboard dictionary containing id, title, url
+            export_formats: List of export formats ['image', 'excel']
+        
+        Returns:
+            Dictionary with export results for each chart and format
+        """
+        try:
+            logger.info(f"📊 Starting independent charts export for dashboard: {dashboard['title']}")
+            logger.info(f"📋 Export formats requested: {export_formats}")
+            
+            # Login if not already logged in
+            if not self.session_cookies:
+                if not await self.login_to_superset():
+                    logger.error("❌ Login failed, cannot export charts")
+                    return {}
+            
+            # Get real chart names from API first
+            api_charts = await self.get_dashboard_charts_api(dashboard['id'])
+            logger.info(f"📋 Retrieved {len(api_charts)} chart names from API")
+            
+            # Navigate to dashboard
+            dashboard_url = dashboard['url'] if dashboard['url'].startswith('http') else f"{self.superset_url}{dashboard['url']}"
+            await self.page.goto(dashboard_url)
+            
+            # Wait for dashboard to load
+            dashboard_loaded = await self._wait_for_dashboard_load(dashboard['title'])
+            if not dashboard_loaded:
+                logger.error(f"❌ Failed to load dashboard: {dashboard['title']}")
+                return {}
+            
+            # Extract chart information from UI and merge with API data
+            charts_data = await self._extract_charts_data_for_export_with_names(dashboard['title'], api_charts)
+            
+            if not charts_data:
+                logger.warning(f"⚠️ No charts found in dashboard: {dashboard['title']}")
+                return {}
+            
+            # Export each chart independently
+            export_results = {}
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            for chart in charts_data:
+                chart_id = chart.get('chart_id', f"chart_{len(export_results)}")
+                chart_title = chart.get('chart_title', f'Unknown_Chart_{len(export_results)}')
+                
+                logger.info(f"🔄 Exporting chart: {chart_title}")
+                
+                chart_exports = {}
+                
+                # Export in each requested format
+                for export_format in export_formats:
+                    try:
+                        export_result = await self._export_chart_independently(
+                            chart, dashboard['title'], chart_title, timestamp, export_format
+                        )
+                        
+                        if export_result:
+                            chart_exports[export_format] = export_result
+                            logger.info(f"✅ Chart '{chart_title}' exported as {export_format}: {export_result}")
+                        else:
+                            logger.warning(f"⚠️ Failed to export chart '{chart_title}' as {export_format}")
+                            
+                    except Exception as e:
+                        logger.error(f"❌ Error exporting chart '{chart_title}' as {export_format}: {e}")
+                        chart_exports[export_format] = None
+                
+                export_results[chart_id] = {
+                    'chart_title': chart_title,
+                    'chart_position': chart.get('chart_position', {}),
+                    'exports': chart_exports,
+                    'export_timestamp': timestamp
+                }
+                
+                # Add small delay between chart exports to avoid overwhelming the system
+                await asyncio.sleep(1)
+            
+            logger.info(f"✅ Independent charts export completed for dashboard: {dashboard['title']}")
+            logger.info(f"📊 Exported {len(export_results)} charts in formats: {export_formats}")
+            
+            return export_results
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to export dashboard charts independently: {e}")
+            return {}
+
+    async def _extract_charts_data_for_export(self, dashboard_title):
+        """Extract chart information specifically for export purposes"""
+        try:
+            logger.info(f"🔍 Extracting charts data for export from dashboard: {dashboard_title}")
+            
+            # JavaScript to extract chart information optimized for export
+            charts = await self.page.evaluate("""
+                () => {
+                    const charts = [];
+                    
+                    // Try multiple selectors for chart containers
+                    const chartSelectors = [
+                        '[data-test="chart-container"]',
+                        '.chart-container',
+                        '.visualization-container', 
+                        '.ant-card',
+                        '.dashboard-chart',
+                        '.slice_container',
+                        '.chart',
+                        '[class*="chart"]',
+                        '[class*="visualization"]',
+                        '.react-grid-item',
+                        '.grid-item',
+                        '[data-grid-item]'
+                    ];
+                    
+                    let chartElements = [];
+                    for (const selector of chartSelectors) {
+                        const elements = document.querySelectorAll(selector);
+                        if (elements.length > 0) {
+                            chartElements = Array.from(elements);
+                            break;
+                        }
+                    }
+                    
+                    // Filter out elements that are too small or hidden
+                    chartElements = chartElements.filter(function(element) {
+                        const rect = element.getBoundingClientRect();
+                        const style = window.getComputedStyle(element);
+                        
+                        // Skip if element is not visible or too small
+                        if (rect.width < 50 || rect.height < 50) return false;
+                        if (style.display === 'none') return false;
+                        if (style.visibility === 'hidden') return false;
+                        if (style.opacity === '0') return false;
+                        
+                        // Skip if element is outside viewport
+                        if (rect.bottom < 0 || rect.top > window.innerHeight) return false;
+                        if (rect.right < 0 || rect.left > window.innerWidth) return false;
+                        
+                        return true;
+                    });
+                    
+                    chartElements.forEach(function(element, index) {
+                        const rect = element.getBoundingClientRect();
+                        
+                        // Try to extract chart title with multiple strategies
+                        let title = 'Unknown Chart';
+                        
+                        // Strategy 1: Look for title elements within the chart
+                        const titleSelectors = [
+                            '.chart-title',
+                            '.title',
+                            '.chart-header', 
+                            '.visualization-header',
+                            'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+                            '[data-test="chart-title"]',
+                            '.ant-card-head-title'
+                        ];
+                        
+                        for (let i = 0; i < titleSelectors.length; i++) {
+                            const selector = titleSelectors[i];
+                            const titleElement = element.querySelector(selector);
+                            if (titleElement && titleElement.textContent.trim()) {
+                                title = titleElement.textContent.trim();
+                                break;
+                            }
+                        }
+                        
+                        // Strategy 2: Use element attributes
+                        if (title === 'Unknown Chart') {
+                            title = element.getAttribute('title') ||
+                                     element.getAttribute('data-chart-title') ||
+                                     element.getAttribute('aria-label') ||
+                                     'Chart ' + (index + 1);
+                        }
+                        
+                        // Get chart position with scroll offset
+                        const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
+                        const scrollY = window.pageYOffset || document.documentElement.scrollTop;
+                        
+                        const position = {
+                            x: Math.round(rect.left + scrollX),
+                            y: Math.round(rect.top + scrollY),
+                            width: Math.round(rect.width),
+                            height: Math.round(rect.height)
+                        };
+                        
+                        charts.push({
+                            chart_id: 'chart_' + (index + 1),
+                            chart_title: title.trim(),
+                            chart_position: position,
+                            element_class: element.className,
+                            element_tag: element.tagName,
+                            visible: rect.width > 0 && rect.height > 0,
+                            element: element // Store element reference for interaction
+                        });
+                    });
+                    
+                    return charts;
+                }
+            """)
+            
+            logger.info(f"📊 Found {len(charts)} charts for export")
+            return charts
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to extract charts data for export: {e}")
+            return []
+
+    async def _extract_charts_data_for_export_with_names(self, dashboard_title, api_charts):
+        """Extract chart information for export purposes using real chart names from API with precise matching"""
+        try:
+            logger.info(f"🔍 Extracting charts data for export from dashboard: {dashboard_title} (with API chart names)")
+            
+            # Wait for dashboard to fully load
+            await self._wait_for_dashboard_load(dashboard_title)
+            
+            # First, extract chart positions and UI information using JavaScript with precise sorting
+            ui_charts = await self.page.evaluate("""
+                () => {
+                    const charts = [];
+                    
+                    // Use only the most specific selectors to avoid duplicates
+                    const chartSelectors = [
+                        // Use only the main container selectors
+                        '.dashboard-component-chart-holder',
+                        '.slice_container'
+                    ];
+                    
+                    let chartElements = [];
+                    for (const selector of chartSelectors) {
+                        const elements = document.querySelectorAll(selector);
+                        console.log(`Selector ${selector} found ${elements.length} elements`);
+                        chartElements = chartElements.concat(Array.from(elements));
+                    }
+                    console.log(`Total chart elements before deduplication: ${chartElements.length}`);
+                    
+                    // Remove duplicates and filter valid chart elements
+                    chartElements = [...new Set(chartElements)].filter(element => {
+                        const rect = element.getBoundingClientRect();
+                        const style = window.getComputedStyle(element);
+                        
+                        // Skip if element is not visible or too small
+                        if (rect.width < 50 || rect.height < 50) return false;
+                        if (style.display === 'none') return false;
+                        if (style.visibility === 'hidden') return false;
+                        if (style.opacity === '0') return false;
+                        
+                        // Skip if element is outside viewport
+                        if (rect.bottom < 0 || rect.top > window.innerHeight) return false;
+                        if (rect.right < 0 || rect.left > window.innerWidth) return false;
+                        
+                        // For Superset, we already found the right selectors, so trust them
+                        // Just make sure the element has some content
+                        const hasContent = element.children.length > 0 || 
+                                          element.textContent.trim().length > 0 ||
+                                          element.querySelector('canvas, svg, img, table, .chart, .visualization');
+                        
+                        return hasContent;
+                    });
+                    
+                    console.log(`Chart elements after filtering: ${chartElements.length}`);
+                    
+                    // Sort charts by position (top to bottom, left to right) - this is crucial!
+                    chartElements.sort((a, b) => {
+                        const rectA = a.getBoundingClientRect();
+                        const rectB = b.getBoundingClientRect();
+                        
+                        // First sort by Y position (top to bottom)
+                        if (Math.abs(rectA.top - rectB.top) > 20) {
+                            return rectA.top - rectB.top;
+                        }
+                        
+                        // Then sort by X position (left to right)
+                        return rectA.left - rectB.left;
+                    });
+                    
+                    chartElements.forEach(function(element, index) {
+                        const rect = element.getBoundingClientRect();
+                        
+                        // Get chart position with scroll offset
+                        const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
+                        const scrollY = window.pageYOffset || document.documentElement.scrollTop;
+                        
+                        const position = {
+                            x: Math.round(rect.left + scrollX),
+                            y: Math.round(rect.top + scrollY),
+                            width: Math.round(rect.width),
+                            height: Math.round(rect.height)
+                        };
+                        
+                        // Try to extract chart ID from element attributes
+                        let chart_id = element.getAttribute('data-chart-id') || 
+                                      element.getAttribute('data-slice-id') ||
+                                      element.getAttribute('id') ||
+                                      'chart_' + (index + 1);
+                        
+                        // Generate a UI-based title as fallback
+                        let ui_title = 'Unknown Chart';
+                        
+                        // Try to extract title from element
+                        const titleSelectors = [
+                            '.ant-card-head-title',
+                            '.chart-title',
+                            '.title',
+                            '.chart-header', 
+                            '.visualization-header',
+                            'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+                            '[data-test="chart-title"]'
+                        ];
+                        
+                        for (let i = 0; i < titleSelectors.length; i++) {
+                            const selector = titleSelectors[i];
+                            const titleElement = element.querySelector(selector);
+                            if (titleElement && titleElement.textContent.trim()) {
+                                ui_title = titleElement.textContent.trim();
+                                break;
+                            }
+                        }
+                        
+                        // Use element attributes as fallback
+                        if (ui_title === 'Unknown Chart') {
+                            ui_title = element.getAttribute('title') ||
+                                     element.getAttribute('data-chart-title') ||
+                                     element.getAttribute('aria-label') ||
+                                     'Chart ' + (index + 1);
+                        }
+                        
+                        charts.push({
+                            chart_id: chart_id,
+                            ui_title: ui_title.trim(),
+                            chart_position: position,
+                            element_class: element.className,
+                            element_tag: element.tagName,
+                            visible: rect.width > 0 && rect.height > 0,
+                            element: element // Store element reference for interaction
+                        });
+                    });
+                    
+                    return charts;
+                }
+            """)
+            
+            logger.info(f"📊 Found {len(ui_charts)} UI chart elements")
+            logger.info(f"📋 API provided {len(api_charts)} charts")
+            
+            # Now match UI charts with API charts precisely by position
+            charts_data = []
+            
+            # Strategy: Match by position in the sorted arrays
+            # This ensures that the first API chart matches the first UI chart, etc.
+            for i, api_chart in enumerate(api_charts):
+                if i < len(ui_charts):
+                    ui_chart = ui_charts[i]
+                    
+                    # Use the API chart name as the primary name
+                    chart_title = api_chart.get('name', api_chart.get('slice_name', f'Chart_{i+1}'))
+                    chart_id = api_chart.get('id', i + 1)
+                    
+                    logger.info(f"🎯 Match {i+1}: API '{chart_title}' -> UI '{ui_chart.get('ui_title')}'")
+                    
+                    charts_data.append({
+                        'chart_id': chart_id,
+                        'chart_title': chart_title,
+                        'chart_position': ui_chart.get('chart_position'),
+                        'element_class': ui_chart.get('element_class'),
+                        'element_tag': ui_chart.get('element_tag'),
+                        'visible': ui_chart.get('visible', True),
+                        'ui_title': ui_chart.get('ui_title'),
+                        'api_chart': api_chart,
+                        'ui_element': ui_chart.get('element')
+                    })
+                else:
+                    logger.warning(f"⚠️ No UI element found for API chart {i+1}: {api_chart.get('name', 'Unknown')}")
+            
+            # If we have more UI charts than API charts, log a warning
+            if len(ui_charts) > len(api_charts):
+                logger.warning(f"⚠️ Found {len(ui_charts)} UI charts but only {len(api_charts)} API charts")
+                for i in range(len(api_charts), len(ui_charts)):
+                    logger.warning(f"⚠️ Extra UI chart {i+1}: {ui_charts[i].get('ui_title')}")
+            
+            logger.info(f"📊 Successfully mapped {len(charts_data)} charts with API names")
+            return charts_data
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to extract charts data with API names: {e}")
+            return []
+
+    def _calculate_similarity(self, str1, str2):
+        """Calculate similarity between two strings (simple implementation)"""
+        try:
+            import difflib
+            return difflib.SequenceMatcher(None, str1, str2).ratio()
+        except:
+            # Fallback simple similarity calculation
+            str1_words = set(str1.split())
+            str2_words = set(str2.split())
+            intersection = str1_words.intersection(str2_words)
+            union = str1_words.union(str2_words)
+            return len(intersection) / len(union) if union else 0
+
+    async def _export_chart_independently(self, chart, dashboard_name, chart_name, timestamp, export_format='image'):
+        """
+        Export a single chart independently with proper naming convention
+        
+        Args:
+            chart: Chart dictionary with chart information
+            dashboard_name: Name of the dashboard
+            chart_name: Name of the chart
+            timestamp: Timestamp string
+            export_format: Export format ('image', 'excel')
+        
+        Returns:
+            Path to exported file or None if failed
+        """
+        try:
+            # Generate filename according to naming convention: chart_{dashboard_name}_{chart_name}_yyyymmdd_hhmiss
+            clean_dashboard_name = self._clean_filename(dashboard_name)
+            clean_chart_name = self._clean_filename(chart_name)
+            
+            if export_format == 'image':
+                file_extension = 'png'
+                filename = f"chart_{clean_dashboard_name}_{clean_chart_name}_{timestamp}.{file_extension}"
+            elif export_format == 'excel':
+                file_extension = 'xlsx'
+                filename = f"chart_{clean_dashboard_name}_{clean_chart_name}_{timestamp}.{file_extension}"
+            else:
+                logger.warning(f"⚠️ Unsupported export format: {export_format}")
+                return None
+            
+            export_path = os.path.join(self.screenshots_dir, filename)
+            
+            logger.info(f"🔄 Exporting chart '{chart_name}' as {export_format} to: {filename}")
+            
+            # Try to focus on the chart first
+            chart_position = chart.get('chart_position')
+            if chart_position:
+                try:
+                    # Click on chart area to focus it
+                    x = chart_position.get('x', 0) + chart_position.get('width', 100) // 2
+                    y = chart_position.get('y', 0) + chart_position.get('height', 100) // 2
+                    await self.page.mouse.click(x, y)
+                    await asyncio.sleep(0.5)
+                except Exception as click_error:
+                    logger.debug(f"Could not click on chart: {click_error}")
+            
+            # Export based on format
+            if export_format == 'image':
+                export_success = await self._export_chart_as_image(chart, filename)
+            elif export_format == 'excel':
+                export_success = await self._export_chart_as_excel(chart, filename)
+            else:
+                export_success = False
+            
+            if export_success:
+                # Verify file was created and return path
+                if os.path.exists(export_path):
+                    file_size = os.path.getsize(export_path)
+                    logger.info(f"✅ Chart exported successfully: {export_path} ({file_size} bytes)")
+                    return export_path
+                else:
+                    logger.warning(f"⚠️ Export reported success but file not found: {export_path}")
+                    return None
+            else:
+                logger.warning(f"⚠️ Chart export failed for format: {export_format}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to export chart independently: {e}")
+            return None
+
+    async def export_all_dashboards_charts_independently(self, export_formats=['image', 'excel'], max_dashboards=None):
+        """
+        Export charts from all dashboards independently
+        
+        Args:
+            export_formats: List of export formats ['image', 'excel']
+            max_dashboards: Maximum number of dashboards to process (None for all)
+        
+        Returns:
+            Dictionary with export results for all dashboards and their charts
+        """
+        try:
+            logger.info("🚀 Starting independent charts export for all dashboards...")
+            logger.info(f"📋 Export formats requested: {export_formats}")
+            
+            # Login if not already logged in
+            if not self.session_cookies:
+                if not await self.login_to_superset():
+                    logger.error("❌ Login failed, cannot export charts")
+                    return {}
+            
+            # Get dashboard list
+            dashboards = await self.get_dashboard_list()
+            
+            if not dashboards:
+                logger.error("❌ No dashboards found")
+                return {}
+            
+            # Limit number of dashboards if specified
+            if max_dashboards and len(dashboards) > max_dashboards:
+                dashboards = dashboards[:max_dashboards]
+                logger.info(f"📊 Processing first {len(dashboards)} dashboards...")
+            
+            # Export charts from each dashboard
+            all_export_results = {}
+            
+            for dashboard in dashboards:
+                try:
+                    logger.info(f"🔄 Processing dashboard: {dashboard['title']}")
+                    
+                    export_results = await self.export_dashboard_charts_independently(
+                        dashboard, export_formats
+                    )
+                    
+                    if export_results:
+                        all_export_results[dashboard['id']] = {
+                            'dashboard_title': dashboard['title'],
+                            'dashboard_url': dashboard['url'],
+                            'charts_exported': len(export_results),
+                            'export_results': export_results
+                        }
+                        logger.info(f"✅ Exported {len(export_results)} charts from dashboard: {dashboard['title']}")
+                    else:
+                        logger.warning(f"⚠️ No charts exported from dashboard: {dashboard['title']}")
+                    
+                    # Add delay between dashboards to avoid overwhelming the system
+                    await asyncio.sleep(2)
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error processing dashboard {dashboard['title']}: {e}")
+                    continue
+            
+            # Calculate summary statistics
+            total_charts_exported = sum(
+                result.get('charts_exported', 0) 
+                for result in all_export_results.values()
+            )
+            
+            logger.info(f"✅ All dashboards charts export completed")
+            logger.info(f"📊 Summary:")
+            logger.info(f"   - Dashboards processed: {len(all_export_results)}")
+            logger.info(f"   - Total charts exported: {total_charts_exported}")
+            logger.info(f"   - Export formats: {export_formats}")
+            
+            return all_export_results
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to export all dashboards charts independently: {e}")
+            return {}
+
+    async def export_dashboard_charts_after_export(self, dashboard, export_formats=['image', 'excel']):
+        """
+        Export charts independently after dashboard has been exported
+        This ensures charts are exported with real names and proper naming convention
+        
+        Args:
+            dashboard: Dashboard dictionary containing id, title, url
+            export_formats: List of export formats ['image', 'excel']
+        
+        Returns:
+            Dictionary with export results for each chart and format
+        """
+        try:
+            logger.info(f"📊 Starting charts export after dashboard export for: {dashboard['title']}")
+            logger.info(f"📋 Export formats requested: {export_formats}")
+            
+            # This method is intentionally decoupled from dashboard export
+            # It can be called independently after dashboard export is complete
+            
+            # Use the existing independent export method with API chart names
+            export_results = await self.export_dashboard_charts_independently(dashboard, export_formats)
+            
+            if export_results:
+                logger.info(f"✅ Successfully exported {len(export_results)} charts after dashboard export")
+                
+                # Log naming convention compliance
+                for chart_id, chart_info in export_results.items():
+                    chart_title = chart_info['chart_title']
+                    logger.info(f"📝 Chart '{chart_title}' exported with real name (no generic names)")
+                
+                return export_results
+            else:
+                logger.warning(f"⚠️ No charts exported for dashboard: {dashboard['title']}")
+                return {}
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to export charts after dashboard export: {e}")
+            return {}
+
     async def _explore_dashboard_details(self, dashboard):
         """Explore dashboard and extract detailed information"""
         try:
@@ -2018,10 +2389,7 @@ class SupersetAutomation:
         """Export chart using Superset's native Download as Image functionality with improved handling"""
         return await self._export_chart_as_format(chart, filename, 'image')
     
-    async def _export_chart_as_csv(self, chart, filename):
-        """Export chart using Superset's native CSV functionality"""
-        return await self._export_chart_as_format(chart, filename, 'csv')
-    
+      
     async def _export_chart_as_excel(self, chart, filename):
         """Export chart using Superset's native Excel functionality"""
         return await self._export_chart_as_format(chart, filename, 'excel')
@@ -2083,9 +2451,6 @@ class SupersetAutomation:
             # Select the appropriate export option based on format
             if export_format == 'image':
                 if not await self._select_download_as_image():
-                    return False
-            elif export_format == 'csv':
-                if not await self._select_download_as_csv():
                     return False
             elif export_format == 'excel':
                 if not await self._select_download_as_excel():
@@ -2554,10 +2919,8 @@ class SupersetAutomation:
             'download_image': [
                 # Direct text matches (found in analysis)
                 'text="Download as image"',
-                'text="Download as Image"',
-                'text="Export as Image"',
-                'text="Download Image"',
-                'text="Export Image"',
+                'text="Download as Image"', 
+                'text="Download Image"', 
                 # Menu item selectors
                 '.ant-dropdown-menu-item:has-text("Image")',
                 '.ant-dropdown-menu-item:has-text("image")',
@@ -2569,19 +2932,6 @@ class SupersetAutomation:
                 # Image format options
                 '.ant-dropdown-menu-item:has-text("png")',
                 'text="png"'
-            ],
-            # CSV export selectors
-            'download_csv': [
-                # Direct text matches (found in analysis)
-                'text="Export to .CSV"',
-                'text="Export to CSV"',
-                'text="Export CSV"',
-                'text="CSV"',
-                # Menu item selectors
-                '.ant-dropdown-menu-item:has-text("CSV")',
-                '.ant-dropdown-menu-item:has-text("csv")',
-                '.dropdown-menu-item:has-text("CSV")',
-                '.dropdown-item:has-text("CSV")'
             ],
             # Excel export selectors
             'download_excel': [
