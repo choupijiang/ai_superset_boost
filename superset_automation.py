@@ -59,6 +59,9 @@ class SupersetAutomation:
         self.page = None
         self.session_cookies = None
         
+        # Track download tasks for cleanup
+        self._download_tasks = []
+        
         # Configuration
         self.timeout = 20000  # Reduced from 30 to 20 seconds for faster processing
         self.headless = True  # Set to False for debugging
@@ -100,6 +103,17 @@ class SupersetAutomation:
     async def close_browser(self):
         """Close browser and cleanup"""
         try:
+            # Cancel any pending download tasks
+            if hasattr(self, '_download_tasks'):
+                for task in self._download_tasks:
+                    if not task.done():
+                        task.cancel()
+                        try:
+                            await task
+                        except asyncio.CancelledError:
+                            pass
+                self._download_tasks.clear()
+            
             if self.page:
                 await self.page.close()
             if self.browser:
@@ -651,7 +665,7 @@ class SupersetAutomation:
             logger.error(f"❌ Failed to capture dashboard screenshot: {e}")
             return None
     
-    async def _generate_export_filename(self, export_type, dashboard_name=None, chart_name=None, file_extension=None):
+    async def _generate_export_filename(self, export_type, dashboard_name=None, file_extension=None):
         """Generate standardized export filename with timestamp"""
         from datetime import datetime
         
@@ -660,10 +674,6 @@ class SupersetAutomation:
         if export_type == 'dashboard' and dashboard_name:
             clean_dashboard_name = self._clean_filename(dashboard_name)
             return f"dashboard_{clean_dashboard_name}_{timestamp}.{file_extension}"
-        elif export_type == 'chart' and dashboard_name and chart_name:
-            clean_dashboard_name = self._clean_filename(dashboard_name)
-            clean_chart_name = self._clean_filename(chart_name)
-            return f"dashboard_{clean_dashboard_name}_{clean_chart_name}_{timestamp}.{file_extension}"
         else:
             return f"export_{timestamp}.{file_extension}"
     
@@ -788,6 +798,7 @@ class SupersetAutomation:
                 
                 # Start download listener
                 download_task = asyncio.create_task(self._wait_for_download_event())
+                self._download_tasks.append(download_task)
                 
                 # Trigger the download
                 if await self._trigger_native_download(export_type):
@@ -811,8 +822,16 @@ class SupersetAutomation:
                         if not download_task.done():
                             download_task.cancel()
                 
+                # Clean up completed task
+                if download_task in self._download_tasks:
+                    self._download_tasks.remove(download_task)
+                
             except Exception as e:
                 logger.error(f"❌ Enhanced export method failed: {e}")
+            
+            # Clean up task if it exists
+            if 'download_task' in locals() and download_task in self._download_tasks:
+                self._download_tasks.remove(download_task)
             
             # Method 2: Fallback to existing approach if enhanced method fails
             logger.info("🔄 Falling back to standard export approach...")
@@ -841,8 +860,6 @@ class SupersetAutomation:
         try:
             if export_type == 'dashboard':
                 return await self._trigger_dashboard_download()
-            elif export_type == 'chart':
-                return await self._trigger_chart_download()
             else:
                 logger.error(f"❌ Unsupported export type: {export_type}")
                 return False
@@ -935,360 +952,18 @@ class SupersetAutomation:
             logger.error(f"❌ Dashboard download trigger failed: {e}")
             return False
 
-    async def _trigger_chart_download(self):
-        """Trigger chart download using improved selectors and strategy"""
-        try:
-            logger.info("🎯 Triggering chart download...")
-            
-            # STRATEGY 1: Try to find chart-specific export buttons first
-            chart_specific_selectors = [
-                '.explore-chart-header .ant-dropdown-trigger',  # Playwright recommended for explore view
-                '.chart-header .ant-dropdown-trigger',
-                '.visualization-header .ant-dropdown-trigger',
-                '[data-test="chart-header"] .ant-dropdown-trigger',
-                '.chart-container .ant-dropdown-trigger',
-                '.dashboard-chart .ant-dropdown-trigger'  # Dashboard chart specific
-            ]
-            
-            for selector in chart_specific_selectors:
-                try:
-                    logger.info(f"🔍 Trying chart selector: {selector}")
-                    
-                    element = await self.page.wait_for_selector(selector, state='visible', timeout=3000)
-                    if element:
-                        await element.click()
-                        logger.info(f"✅ Clicked chart export button: {selector}")
-                        
-                        # Wait for dropdown
-                        await asyncio.sleep(1)
-                        
-                        # Look for Download option
-                        download_selectors = [
-                            'text="Download"',
-                            'text="下载"',
-                            '.ant-dropdown-menu-item:has-text("Download")',
-                            '.ant-dropdown-menu-item:has-text("下载")'
-                        ]
-                        
-                        for dl_selector in download_selectors:
-                            try:
-                                download_element = await self.page.wait_for_selector(dl_selector, state='visible', timeout=2000)
-                                if download_element:
-                                    await download_element.click()
-                                    logger.info(f"✅ Clicked chart Download option: {dl_selector}")
-                                    
-                                    # Wait for submenu
-                                    await asyncio.sleep(1)
-                                    
-                                    # Look for "Download as image" option
-                                    image_selectors = [
-                                        'text="Download as image"',
-                                        'text="Download as Image"',
-                                        'text="导出为图片"',
-                                        '.ant-dropdown-menu-item:has-text("image")',
-                                        '.ant-dropdown-menu-item:has-text("图片")'
-                                    ]
-                                    
-                                    for img_selector in image_selectors:
-                                        try:
-                                            image_element = await self.page.wait_for_selector(img_selector, state='visible', timeout=2000)
-                                            if image_element:
-                                                await image_element.click()
-                                                logger.info(f"✅ Clicked chart Download as Image: {img_selector}")
-                                                return True
-                                        except:
-                                            continue
-                                            
-                            except:
-                                continue
-                        
-                        # Close menu if opened
-                        await self.page.mouse.click(10, 10)
-                        
-                except Exception as selector_error:
-                    logger.debug(f"Chart selector {selector} not found: {selector_error}")
-                    continue
-            
-            # STRATEGY 2: Try right-click context menu on chart
-            logger.info("🔄 Trying right-click context menu strategy...")
-            
-            # Get chart position for right-click
-            chart_position = await self._get_chart_position_for_context_menu()
-            if chart_position:
-                try:
-                    # Right-click on chart
-                    await self.page.mouse.click(chart_position['x'], chart_position['y'], button='right')
-                    await asyncio.sleep(1)
-                    
-                    # Look for export options in context menu
-                    context_selectors = [
-                        'text="Export"',
-                        'text="导出"', 
-                        'text="Download"',
-                        'text="下载"',
-                        '.context-menu-item:has-text("Export")',
-                        '.context-menu-item:has-text("Download")'
-                    ]
-                    
-                    for selector in context_selectors:
-                        try:
-                            context_element = await self.page.wait_for_selector(selector, state='visible', timeout=2000)
-                            if context_element:
-                                await context_element.click()
-                                await asyncio.sleep(1)
-                                
-                                # Look for image options
-                                image_selectors = [
-                                    'text="image"',
-                                    'text="图片"',
-                                    'text="as image"',
-                                    'text="为图片"'
-                                ]
-                                
-                                for img_selector in image_selectors:
-                                    try:
-                                        img_element = await self.page.wait_for_selector(img_selector, state='visible', timeout=2000)
-                                        if img_element:
-                                            await img_element.click()
-                                            logger.info("✅ Selected image option from context menu")
-                                            return True
-                                    except:
-                                        continue
-                                        
-                        except:
-                            continue
-                    
-                    # Close context menu
-                    await self.page.mouse.click(10, 10)
-                    
-                except Exception as context_error:
-                    logger.warning(f"⚠️ Context menu strategy failed: {context_error}")
-            
-            # STRATEGY 3: Try keyboard shortcuts for chart export
-            logger.info("🔄 Trying keyboard shortcut strategy...")
-            
-            keyboard_shortcuts = [
-                # Try common export shortcuts
-                {'key': 'e', 'modifiers': ['Ctrl']},
-                {'key': 'e', 'modifiers': ['Meta']},
-                {'key': 's', 'modifiers': ['Ctrl', 'Shift']},
-                {'key': 's', 'modifiers': ['Meta', 'Shift']},
-                {'key': 'd', 'modifiers': ['Ctrl']},
-                {'key': 'd', 'modifiers': ['Meta']}
-            ]
-            
-            for shortcut in keyboard_shortcuts:
-                try:
-                    await self.page.keyboard.press(shortcut['key'], modifiers=shortcut.get('modifiers', []))
-                    await asyncio.sleep(2)
-                    
-                    # Check if any export dialog appeared
-                    export_dialog = await self.page.query_selector('.ant-modal, .modal, [role="dialog"]')
-                    if export_dialog:
-                        logger.info("✅ Export dialog appeared via keyboard shortcut")
-                        return True
-                        
-                except:
-                    continue
-            
-            logger.warning("⚠️ All chart download strategies failed")
-            logger.info("📝 Note: Charts in dashboard view may not have individual export capabilities")
-            return False
-            
-        except Exception as e:
-            logger.error(f"❌ Chart download trigger failed: {e}")
-            return False
-    
-    async def _try_enhanced_chart_export(self, chart, filename, export_format='image'):
-        """Try enhanced chart export with proper download event handling for different formats"""
-        try:
-            logger.info(f"🔄 Trying enhanced chart export as {export_format}...")
-            
-            # Start download listener
-            download_task = asyncio.create_task(self._wait_for_download_event())
-            
-            try:
-                # Find and click chart export button
-                if not await self._find_and_click_export_button('chart'):
-                    return False
-                
-                # Select the appropriate export option based on format
-                if export_format == 'image':
-                    if not await self._select_download_as_image():
-                        return False
-                elif export_format == 'excel':
-                    if not await self._select_download_as_excel():
-                        return False
-                else:
-                    logger.warning(f"⚠️  Unsupported export format: {export_format}")
-                    return False
-                
-                # Wait for download to complete
-                download = await asyncio.wait_for(download_task, timeout=60.0)
-                
-                if download:
-                    # Save the download with the desired filename
-                    final_path = os.path.join(self.screenshots_dir, filename)
-                    await download.save_as(final_path)
-                    logger.info(f"✅ Enhanced chart export successful: {final_path}")
-                    return True
-                else:
-                    logger.warning("⚠️  Download event listener returned None")
-                    return False
-                    
-            except asyncio.TimeoutError:
-                logger.warning(f"⚠️  Enhanced chart export timeout for {export_format}")
-                if not download_task.done():
-                    download_task.cancel()
-                return False
-            except Exception as e:
-                logger.error(f"❌ Enhanced chart export error for {export_format}: {e}")
-                if not download_task.done():
-                    download_task.cancel()
-                return False
-                
-        except Exception as e:
-            logger.error(f"❌ Enhanced chart export failed for {export_format}: {e}")
-            return False
-    
         
-    async def _select_download_as_excel(self):
-        """Select 'Export to Excel' option from chart menu with submenu navigation"""
-        try:
-            selectors = self._get_superset_export_selectors()
-            excel_selectors = selectors.get('download_excel', [])
-            download_selectors = selectors.get('download_submenu', [])
-            
-            # Wait for dropdown menu to appear
-            await asyncio.sleep(1)
-            
-            # STRATEGY 1: Try direct Excel selection (if visible)
-            for selector in excel_selectors:
-                try:
-                    if await self.page.is_visible(selector, timeout=1000):
-                        await self.page.click(selector)
-                        logger.info(f"✅ Selected 'Export to Excel' option: {selector}")
-                        return True
-                except:
-                    continue
-            
-            # STRATEGY 2: Navigate through Download submenu
-            logger.info("📁 Trying Download submenu navigation for Excel...")
-            
-            # Find and click Download option to reveal submenu
-            for dl_selector in download_selectors:
-                try:
-                    download_element = await self.page.query_selector(dl_selector)
-                    if download_element and await download_element.is_visible():
-                        logger.info(f"✅ Found Download option: {dl_selector}")
-                        
-                        # Click Download to open submenu
-                        await download_element.click()
-                        await asyncio.sleep(1)  # Wait for submenu to appear
-                        
-                        # Now look for Excel in the revealed submenu
-                        for excel_selector in excel_selectors:
-                            try:
-                                excel_element = await self.page.query_selector(excel_selector)
-                                if excel_element:
-                                    # Check if it became visible after submenu opens
-                                    is_visible = await excel_element.is_visible()
-                                    logger.info(f"   Excel option '{excel_selector}' visible: {is_visible}")
-                                    
-                                    if is_visible:
-                                        await excel_element.click()
-                                        logger.info(f"✅ Selected Excel from submenu: {excel_selector}")
-                                        return True
-                                    else:
-                                        # Try to scroll into view and click anyway
-                                        await excel_element.scroll_into_view_if_needed()
-                                        await asyncio.sleep(0.5)
-                                        await excel_element.click()
-                                        logger.info(f"✅ Selected Excel from submenu (forced): {excel_selector}")
-                                        return True
-                            except Exception as e:
-                                logger.debug(f"   Excel selector {excel_selector} failed: {e}")
-                                continue
-                        break
-                except Exception as e:
-                    logger.debug(f"Download selector {dl_selector} failed: {e}")
-                    continue
-            
-            # STRATEGY 3: Try alternative approach - find Excel by text content
-            logger.info("🔍 Trying to find Excel by text content...")
-            try:
-                # Look for any element containing Excel text
-                excel_elements = await self.page.query_selector_all('*')
-                for element in excel_elements:
-                    try:
-                        text = await element.text_content()
-                        if text and 'Excel' in text and 'Export' in text:
-                            # Try to click if it's a menu item
-                            parent = await element.evaluate_handle("""(element) => {
-                                let parent = element;
-                                while (parent && parent.parentElement) {
-                                    parent = parent.parentElement;
-                                    if (parent.getAttribute && parent.getAttribute('role') === 'menuitem') {
-                                        return parent;
-                                    }
-                                }
-                                return null;
-                            }""")
-                            
-                            if parent:
-                                await parent.as_element().click()
-                                logger.info(f"✅ Selected Excel via text content: {text.strip()}")
-                                return True
-                    except:
-                        continue
-            except Exception as e:
-                logger.debug(f"Text content search failed: {e}")
-            
-            logger.warning("⚠️  Excel export option not found")
-            return False
-            
-        except Exception as e:
-            logger.error(f"❌ Error selecting Excel option: {e}")
-            return False
-
-    async def _get_chart_position_for_context_menu(self):
-        """Get chart position for right-click context menu"""
-        try:
-            # Find the first visible chart container
-            chart_selectors = [
-                '.dashboard-chart',
-                '.chart-container', 
-                '.visualization-container',
-                '[data-test="chart-container"]'
-            ]
-            
-            for selector in chart_selectors:
-                try:
-                    chart_element = await self.page.wait_for_selector(selector, state='visible', timeout=3000)
-                    if chart_element:
-                        # Get chart position
-                        box = await chart_element.bounding_box()
-                        if box and box['width'] > 50 and box['height'] > 50:
-                            # Click in center of chart
-                            return {
-                                'x': box['x'] + box['width'] / 2,
-                                'y': box['y'] + box['height'] / 2
-                            }
-                except:
-                    continue
-            
-            logger.warning("⚠️ Could not find chart position for context menu")
-            return None
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to get chart position: {e}")
-            return None
-
+    
     
     async def _try_standard_export(self, export_type, filename):
-        """Try standard export button approach"""
+        """Try standard export button approach for dashboard"""
         try:
             logger.info(f"🔄 Trying standard export for {export_type}...")
+            
+            # Only support dashboard export
+            if export_type != 'dashboard':
+                logger.error(f"❌ Unsupported export type: {export_type}")
+                return False
             
             # Find and click export button
             if not await self._find_and_click_export_button(export_type):
@@ -1534,598 +1209,11 @@ class SupersetAutomation:
             logger.error(f"❌ Failed to capture detailed dashboards: {e}")
             return []
 
-    async def export_dashboard_charts_independently(self, dashboard, export_formats=['image', 'excel']):
-        """
-        Export all charts from a dashboard independently with specified formats
-        This method is decoupled from dashboard export functionality and uses real chart names from API
-        
-        Args:
-            dashboard: Dashboard dictionary containing id, title, url
-            export_formats: List of export formats ['image', 'excel']
-        
-        Returns:
-            Dictionary with export results for each chart and format
-        """
-        try:
-            logger.info(f"📊 Starting independent charts export for dashboard: {dashboard['title']}")
-            logger.info(f"📋 Export formats requested: {export_formats}")
-            
-            # Login if not already logged in
-            if not self.session_cookies:
-                if not await self.login_to_superset():
-                    logger.error("❌ Login failed, cannot export charts")
-                    return {}
-            
-            # Get real chart names from API first
-            api_charts = await self.get_dashboard_charts_api(dashboard['id'])
-            logger.info(f"📋 Retrieved {len(api_charts)} chart names from API")
-            
-            # Navigate to dashboard
-            dashboard_url = dashboard['url'] if dashboard['url'].startswith('http') else f"{self.superset_url}{dashboard['url']}"
-            await self.page.goto(dashboard_url)
-            
-            # Wait for dashboard to load
-            dashboard_loaded = await self._wait_for_dashboard_load(dashboard['title'])
-            if not dashboard_loaded:
-                logger.error(f"❌ Failed to load dashboard: {dashboard['title']}")
-                return {}
-            
-            # Extract chart information from UI and merge with API data
-            charts_data = await self._extract_charts_data_for_export_with_names(dashboard['title'], api_charts)
-            
-            if not charts_data:
-                logger.warning(f"⚠️ No charts found in dashboard: {dashboard['title']}")
-                return {}
-            
-            # Export each chart independently
-            export_results = {}
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            
-            for chart in charts_data:
-                chart_id = chart.get('chart_id', f"chart_{len(export_results)}")
-                chart_title = chart.get('chart_title', f'Unknown_Chart_{len(export_results)}')
-                
-                logger.info(f"🔄 Exporting chart: {chart_title}")
-                
-                chart_exports = {}
-                
-                # Export in each requested format
-                for export_format in export_formats:
-                    try:
-                        export_result = await self._export_chart_independently(
-                            chart, dashboard['title'], chart_title, timestamp, export_format
-                        )
-                        
-                        if export_result:
-                            chart_exports[export_format] = export_result
-                            logger.info(f"✅ Chart '{chart_title}' exported as {export_format}: {export_result}")
-                        else:
-                            logger.warning(f"⚠️ Failed to export chart '{chart_title}' as {export_format}")
-                            
-                    except Exception as e:
-                        logger.error(f"❌ Error exporting chart '{chart_title}' as {export_format}: {e}")
-                        chart_exports[export_format] = None
-                
-                export_results[chart_id] = {
-                    'chart_title': chart_title,
-                    'chart_position': chart.get('chart_position', {}),
-                    'exports': chart_exports,
-                    'export_timestamp': timestamp
-                }
-                
-                # Add small delay between chart exports to avoid overwhelming the system
-                await asyncio.sleep(1)
-            
-            logger.info(f"✅ Independent charts export completed for dashboard: {dashboard['title']}")
-            logger.info(f"📊 Exported {len(export_results)} charts in formats: {export_formats}")
-            
-            return export_results
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to export dashboard charts independently: {e}")
-            return {}
-
-    async def _extract_charts_data_for_export(self, dashboard_title):
-        """Extract chart information specifically for export purposes"""
-        try:
-            logger.info(f"🔍 Extracting charts data for export from dashboard: {dashboard_title}")
-            
-            # JavaScript to extract chart information optimized for export
-            charts = await self.page.evaluate("""
-                () => {
-                    const charts = [];
-                    
-                    // Try multiple selectors for chart containers
-                    const chartSelectors = [
-                        '[data-test="chart-container"]',
-                        '.chart-container',
-                        '.visualization-container', 
-                        '.ant-card',
-                        '.dashboard-chart',
-                        '.slice_container',
-                        '.chart',
-                        '[class*="chart"]',
-                        '[class*="visualization"]',
-                        '.react-grid-item',
-                        '.grid-item',
-                        '[data-grid-item]'
-                    ];
-                    
-                    let chartElements = [];
-                    for (const selector of chartSelectors) {
-                        const elements = document.querySelectorAll(selector);
-                        if (elements.length > 0) {
-                            chartElements = Array.from(elements);
-                            break;
-                        }
-                    }
-                    
-                    // Filter out elements that are too small or hidden
-                    chartElements = chartElements.filter(function(element) {
-                        const rect = element.getBoundingClientRect();
-                        const style = window.getComputedStyle(element);
-                        
-                        // Skip if element is not visible or too small
-                        if (rect.width < 50 || rect.height < 50) return false;
-                        if (style.display === 'none') return false;
-                        if (style.visibility === 'hidden') return false;
-                        if (style.opacity === '0') return false;
-                        
-                        // Skip if element is outside viewport
-                        if (rect.bottom < 0 || rect.top > window.innerHeight) return false;
-                        if (rect.right < 0 || rect.left > window.innerWidth) return false;
-                        
-                        return true;
-                    });
-                    
-                    chartElements.forEach(function(element, index) {
-                        const rect = element.getBoundingClientRect();
-                        
-                        // Try to extract chart title with multiple strategies
-                        let title = 'Unknown Chart';
-                        
-                        // Strategy 1: Look for title elements within the chart
-                        const titleSelectors = [
-                            '.chart-title',
-                            '.title',
-                            '.chart-header', 
-                            '.visualization-header',
-                            'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-                            '[data-test="chart-title"]',
-                            '.ant-card-head-title'
-                        ];
-                        
-                        for (let i = 0; i < titleSelectors.length; i++) {
-                            const selector = titleSelectors[i];
-                            const titleElement = element.querySelector(selector);
-                            if (titleElement && titleElement.textContent.trim()) {
-                                title = titleElement.textContent.trim();
-                                break;
-                            }
-                        }
-                        
-                        // Strategy 2: Use element attributes
-                        if (title === 'Unknown Chart') {
-                            title = element.getAttribute('title') ||
-                                     element.getAttribute('data-chart-title') ||
-                                     element.getAttribute('aria-label') ||
-                                     'Chart ' + (index + 1);
-                        }
-                        
-                        // Get chart position with scroll offset
-                        const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
-                        const scrollY = window.pageYOffset || document.documentElement.scrollTop;
-                        
-                        const position = {
-                            x: Math.round(rect.left + scrollX),
-                            y: Math.round(rect.top + scrollY),
-                            width: Math.round(rect.width),
-                            height: Math.round(rect.height)
-                        };
-                        
-                        charts.push({
-                            chart_id: 'chart_' + (index + 1),
-                            chart_title: title.trim(),
-                            chart_position: position,
-                            element_class: element.className,
-                            element_tag: element.tagName,
-                            visible: rect.width > 0 && rect.height > 0,
-                            element: element // Store element reference for interaction
-                        });
-                    });
-                    
-                    return charts;
-                }
-            """)
-            
-            logger.info(f"📊 Found {len(charts)} charts for export")
-            return charts
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to extract charts data for export: {e}")
-            return []
-
-    async def _extract_charts_data_for_export_with_names(self, dashboard_title, api_charts):
-        """Extract chart information for export purposes using real chart names from API with precise matching"""
-        try:
-            logger.info(f"🔍 Extracting charts data for export from dashboard: {dashboard_title} (with API chart names)")
-            
-            # Wait for dashboard to fully load
-            await self._wait_for_dashboard_load(dashboard_title)
-            
-            # First, extract chart positions and UI information using JavaScript with precise sorting
-            ui_charts = await self.page.evaluate("""
-                () => {
-                    const charts = [];
-                    
-                    // Use only the most specific selectors to avoid duplicates
-                    const chartSelectors = [
-                        // Use only the main container selectors
-                        '.dashboard-component-chart-holder',
-                        '.slice_container'
-                    ];
-                    
-                    let chartElements = [];
-                    for (const selector of chartSelectors) {
-                        const elements = document.querySelectorAll(selector);
-                        console.log(`Selector ${selector} found ${elements.length} elements`);
-                        chartElements = chartElements.concat(Array.from(elements));
-                    }
-                    console.log(`Total chart elements before deduplication: ${chartElements.length}`);
-                    
-                    // Remove duplicates and filter valid chart elements
-                    chartElements = [...new Set(chartElements)].filter(element => {
-                        const rect = element.getBoundingClientRect();
-                        const style = window.getComputedStyle(element);
-                        
-                        // Skip if element is not visible or too small
-                        if (rect.width < 50 || rect.height < 50) return false;
-                        if (style.display === 'none') return false;
-                        if (style.visibility === 'hidden') return false;
-                        if (style.opacity === '0') return false;
-                        
-                        // Skip if element is outside viewport
-                        if (rect.bottom < 0 || rect.top > window.innerHeight) return false;
-                        if (rect.right < 0 || rect.left > window.innerWidth) return false;
-                        
-                        // For Superset, we already found the right selectors, so trust them
-                        // Just make sure the element has some content
-                        const hasContent = element.children.length > 0 || 
-                                          element.textContent.trim().length > 0 ||
-                                          element.querySelector('canvas, svg, img, table, .chart, .visualization');
-                        
-                        return hasContent;
-                    });
-                    
-                    console.log(`Chart elements after filtering: ${chartElements.length}`);
-                    
-                    // Sort charts by position (top to bottom, left to right) - this is crucial!
-                    chartElements.sort((a, b) => {
-                        const rectA = a.getBoundingClientRect();
-                        const rectB = b.getBoundingClientRect();
-                        
-                        // First sort by Y position (top to bottom)
-                        if (Math.abs(rectA.top - rectB.top) > 20) {
-                            return rectA.top - rectB.top;
-                        }
-                        
-                        // Then sort by X position (left to right)
-                        return rectA.left - rectB.left;
-                    });
-                    
-                    chartElements.forEach(function(element, index) {
-                        const rect = element.getBoundingClientRect();
-                        
-                        // Get chart position with scroll offset
-                        const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
-                        const scrollY = window.pageYOffset || document.documentElement.scrollTop;
-                        
-                        const position = {
-                            x: Math.round(rect.left + scrollX),
-                            y: Math.round(rect.top + scrollY),
-                            width: Math.round(rect.width),
-                            height: Math.round(rect.height)
-                        };
-                        
-                        // Try to extract chart ID from element attributes
-                        let chart_id = element.getAttribute('data-chart-id') || 
-                                      element.getAttribute('data-slice-id') ||
-                                      element.getAttribute('id') ||
-                                      'chart_' + (index + 1);
-                        
-                        // Generate a UI-based title as fallback
-                        let ui_title = 'Unknown Chart';
-                        
-                        // Try to extract title from element
-                        const titleSelectors = [
-                            '.ant-card-head-title',
-                            '.chart-title',
-                            '.title',
-                            '.chart-header', 
-                            '.visualization-header',
-                            'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-                            '[data-test="chart-title"]'
-                        ];
-                        
-                        for (let i = 0; i < titleSelectors.length; i++) {
-                            const selector = titleSelectors[i];
-                            const titleElement = element.querySelector(selector);
-                            if (titleElement && titleElement.textContent.trim()) {
-                                ui_title = titleElement.textContent.trim();
-                                break;
-                            }
-                        }
-                        
-                        // Use element attributes as fallback
-                        if (ui_title === 'Unknown Chart') {
-                            ui_title = element.getAttribute('title') ||
-                                     element.getAttribute('data-chart-title') ||
-                                     element.getAttribute('aria-label') ||
-                                     'Chart ' + (index + 1);
-                        }
-                        
-                        charts.push({
-                            chart_id: chart_id,
-                            ui_title: ui_title.trim(),
-                            chart_position: position,
-                            element_class: element.className,
-                            element_tag: element.tagName,
-                            visible: rect.width > 0 && rect.height > 0,
-                            element: element // Store element reference for interaction
-                        });
-                    });
-                    
-                    return charts;
-                }
-            """)
-            
-            logger.info(f"📊 Found {len(ui_charts)} UI chart elements")
-            logger.info(f"📋 API provided {len(api_charts)} charts")
-            
-            # Now match UI charts with API charts precisely by position
-            charts_data = []
-            
-            # Strategy: Match by position in the sorted arrays
-            # This ensures that the first API chart matches the first UI chart, etc.
-            for i, api_chart in enumerate(api_charts):
-                if i < len(ui_charts):
-                    ui_chart = ui_charts[i]
-                    
-                    # Use the API chart name as the primary name
-                    chart_title = api_chart.get('name', api_chart.get('slice_name', f'Chart_{i+1}'))
-                    chart_id = api_chart.get('id', i + 1)
-                    
-                    logger.info(f"🎯 Match {i+1}: API '{chart_title}' -> UI '{ui_chart.get('ui_title')}'")
-                    
-                    charts_data.append({
-                        'chart_id': chart_id,
-                        'chart_title': chart_title,
-                        'chart_position': ui_chart.get('chart_position'),
-                        'element_class': ui_chart.get('element_class'),
-                        'element_tag': ui_chart.get('element_tag'),
-                        'visible': ui_chart.get('visible', True),
-                        'ui_title': ui_chart.get('ui_title'),
-                        'api_chart': api_chart,
-                        'ui_element': ui_chart.get('element')
-                    })
-                else:
-                    logger.warning(f"⚠️ No UI element found for API chart {i+1}: {api_chart.get('name', 'Unknown')}")
-            
-            # If we have more UI charts than API charts, log a warning
-            if len(ui_charts) > len(api_charts):
-                logger.warning(f"⚠️ Found {len(ui_charts)} UI charts but only {len(api_charts)} API charts")
-                for i in range(len(api_charts), len(ui_charts)):
-                    logger.warning(f"⚠️ Extra UI chart {i+1}: {ui_charts[i].get('ui_title')}")
-            
-            logger.info(f"📊 Successfully mapped {len(charts_data)} charts with API names")
-            return charts_data
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to extract charts data with API names: {e}")
-            return []
-
-    def _calculate_similarity(self, str1, str2):
-        """Calculate similarity between two strings (simple implementation)"""
-        try:
-            import difflib
-            return difflib.SequenceMatcher(None, str1, str2).ratio()
-        except:
-            # Fallback simple similarity calculation
-            str1_words = set(str1.split())
-            str2_words = set(str2.split())
-            intersection = str1_words.intersection(str2_words)
-            union = str1_words.union(str2_words)
-            return len(intersection) / len(union) if union else 0
-
-    async def _export_chart_independently(self, chart, dashboard_name, chart_name, timestamp, export_format='image'):
-        """
-        Export a single chart independently with proper naming convention
-        
-        Args:
-            chart: Chart dictionary with chart information
-            dashboard_name: Name of the dashboard
-            chart_name: Name of the chart
-            timestamp: Timestamp string
-            export_format: Export format ('image', 'excel')
-        
-        Returns:
-            Path to exported file or None if failed
-        """
-        try:
-            # Generate filename according to naming convention: chart_{dashboard_name}_{chart_name}_yyyymmdd_hhmiss
-            clean_dashboard_name = self._clean_filename(dashboard_name)
-            clean_chart_name = self._clean_filename(chart_name)
-            
-            if export_format == 'image':
-                file_extension = 'png'
-                filename = f"chart_{clean_dashboard_name}_{clean_chart_name}_{timestamp}.{file_extension}"
-            elif export_format == 'excel':
-                file_extension = 'xlsx'
-                filename = f"chart_{clean_dashboard_name}_{clean_chart_name}_{timestamp}.{file_extension}"
-            else:
-                logger.warning(f"⚠️ Unsupported export format: {export_format}")
-                return None
-            
-            export_path = os.path.join(self.screenshots_dir, filename)
-            
-            logger.info(f"🔄 Exporting chart '{chart_name}' as {export_format} to: {filename}")
-            
-            # Try to focus on the chart first
-            chart_position = chart.get('chart_position')
-            if chart_position:
-                try:
-                    # Click on chart area to focus it
-                    x = chart_position.get('x', 0) + chart_position.get('width', 100) // 2
-                    y = chart_position.get('y', 0) + chart_position.get('height', 100) // 2
-                    await self.page.mouse.click(x, y)
-                    await asyncio.sleep(0.5)
-                except Exception as click_error:
-                    logger.debug(f"Could not click on chart: {click_error}")
-            
-            # Export based on format
-            if export_format == 'image':
-                export_success = await self._export_chart_as_image(chart, filename)
-            elif export_format == 'excel':
-                export_success = await self._export_chart_as_excel(chart, filename)
-            else:
-                export_success = False
-            
-            if export_success:
-                # Verify file was created and return path
-                if os.path.exists(export_path):
-                    file_size = os.path.getsize(export_path)
-                    logger.info(f"✅ Chart exported successfully: {export_path} ({file_size} bytes)")
-                    return export_path
-                else:
-                    logger.warning(f"⚠️ Export reported success but file not found: {export_path}")
-                    return None
-            else:
-                logger.warning(f"⚠️ Chart export failed for format: {export_format}")
-                return None
-                
-        except Exception as e:
-            logger.error(f"❌ Failed to export chart independently: {e}")
-            return None
-
-    async def export_all_dashboards_charts_independently(self, export_formats=['image', 'excel'], max_dashboards=None):
-        """
-        Export charts from all dashboards independently
-        
-        Args:
-            export_formats: List of export formats ['image', 'excel']
-            max_dashboards: Maximum number of dashboards to process (None for all)
-        
-        Returns:
-            Dictionary with export results for all dashboards and their charts
-        """
-        try:
-            logger.info("🚀 Starting independent charts export for all dashboards...")
-            logger.info(f"📋 Export formats requested: {export_formats}")
-            
-            # Login if not already logged in
-            if not self.session_cookies:
-                if not await self.login_to_superset():
-                    logger.error("❌ Login failed, cannot export charts")
-                    return {}
-            
-            # Get dashboard list
-            dashboards = await self.get_dashboard_list()
-            
-            if not dashboards:
-                logger.error("❌ No dashboards found")
-                return {}
-            
-            # Limit number of dashboards if specified
-            if max_dashboards and len(dashboards) > max_dashboards:
-                dashboards = dashboards[:max_dashboards]
-                logger.info(f"📊 Processing first {len(dashboards)} dashboards...")
-            
-            # Export charts from each dashboard
-            all_export_results = {}
-            
-            for dashboard in dashboards:
-                try:
-                    logger.info(f"🔄 Processing dashboard: {dashboard['title']}")
-                    
-                    export_results = await self.export_dashboard_charts_independently(
-                        dashboard, export_formats
-                    )
-                    
-                    if export_results:
-                        all_export_results[dashboard['id']] = {
-                            'dashboard_title': dashboard['title'],
-                            'dashboard_url': dashboard['url'],
-                            'charts_exported': len(export_results),
-                            'export_results': export_results
-                        }
-                        logger.info(f"✅ Exported {len(export_results)} charts from dashboard: {dashboard['title']}")
-                    else:
-                        logger.warning(f"⚠️ No charts exported from dashboard: {dashboard['title']}")
-                    
-                    # Add delay between dashboards to avoid overwhelming the system
-                    await asyncio.sleep(2)
-                    
-                except Exception as e:
-                    logger.error(f"❌ Error processing dashboard {dashboard['title']}: {e}")
-                    continue
-            
-            # Calculate summary statistics
-            total_charts_exported = sum(
-                result.get('charts_exported', 0) 
-                for result in all_export_results.values()
-            )
-            
-            logger.info(f"✅ All dashboards charts export completed")
-            logger.info(f"📊 Summary:")
-            logger.info(f"   - Dashboards processed: {len(all_export_results)}")
-            logger.info(f"   - Total charts exported: {total_charts_exported}")
-            logger.info(f"   - Export formats: {export_formats}")
-            
-            return all_export_results
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to export all dashboards charts independently: {e}")
-            return {}
-
-    async def export_dashboard_charts_after_export(self, dashboard, export_formats=['image', 'excel']):
-        """
-        Export charts independently after dashboard has been exported
-        This ensures charts are exported with real names and proper naming convention
-        
-        Args:
-            dashboard: Dashboard dictionary containing id, title, url
-            export_formats: List of export formats ['image', 'excel']
-        
-        Returns:
-            Dictionary with export results for each chart and format
-        """
-        try:
-            logger.info(f"📊 Starting charts export after dashboard export for: {dashboard['title']}")
-            logger.info(f"📋 Export formats requested: {export_formats}")
-            
-            # This method is intentionally decoupled from dashboard export
-            # It can be called independently after dashboard export is complete
-            
-            # Use the existing independent export method with API chart names
-            export_results = await self.export_dashboard_charts_independently(dashboard, export_formats)
-            
-            if export_results:
-                logger.info(f"✅ Successfully exported {len(export_results)} charts after dashboard export")
-                
-                # Log naming convention compliance
-                for chart_id, chart_info in export_results.items():
-                    chart_title = chart_info['chart_title']
-                    logger.info(f"📝 Chart '{chart_title}' exported with real name (no generic names)")
-                
-                return export_results
-            else:
-                logger.warning(f"⚠️ No charts exported for dashboard: {dashboard['title']}")
-                return {}
-                
-        except Exception as e:
-            logger.error(f"❌ Failed to export charts after dashboard export: {e}")
-            return {}
-
+  
+  
+    
+    
+    
     async def _explore_dashboard_details(self, dashboard):
         """Explore dashboard and extract detailed information"""
         try:
@@ -2364,237 +1452,19 @@ class SupersetAutomation:
             clean_chart_title = self._clean_filename(chart.get('chart_title', 'unknown'))
             
             chart_screenshot = f"chart_{clean_title}_{clean_chart_title}_{timestamp}.png"
-            chart_screenshot_path = os.path.join(self.screenshots_dir, chart_screenshot)
             
             # Ensure screenshots directory exists
             os.makedirs(self.screenshots_dir, exist_ok=True)
             
-            # Try Superset's Download as Image functionality for individual charts
-            logger.info(f"🔄 Attempting Superset Download as Image for chart: {chart.get('chart_title', 'unknown')}")
-            export_success = await self._export_chart_as_image(chart, chart_screenshot)
-            
-            if export_success:
-                logger.info(f"✅ Chart exported using Superset: {chart_screenshot_path}")
-                return chart_screenshot_path
-            else:
-                # Fallback to original screenshot method
-                logger.warning("⚠️  Superset chart export failed, falling back to screenshot method")
-                return await self._capture_chart_screenshot_fallback(chart, dashboard_title, timestamp)
+            # Chart export functionality removed - using fallback screenshot method only
+            logger.warning("⚠️  Chart export functionality removed, using screenshot method")
+            return await self._capture_chart_screenshot_fallback(chart, dashboard_title, timestamp)
             
         except Exception as e:
             logger.error(f"❌ Failed to capture chart screenshot: {e}")
             return None
     
-    async def _export_chart_as_image(self, chart, filename):
-        """Export chart using Superset's native Download as Image functionality with improved handling"""
-        return await self._export_chart_as_format(chart, filename, 'image')
-    
-      
-    async def _export_chart_as_excel(self, chart, filename):
-        """Export chart using Superset's native Excel functionality"""
-        return await self._export_chart_as_format(chart, filename, 'excel')
-    
-    async def _export_chart_as_format(self, chart, filename, export_format='image'):
-        """Export chart using Superset's native functionality for different formats"""
-        try:
-            logger.info(f"🔄 Starting chart export as {export_format} with improved native functionality...")
-            
-            # Approach 1: Enhanced native export with proper download event handling
-            if await self._try_enhanced_chart_export(chart, filename, export_format):
-                return True
-            
-            # Approach 2: Standard chart export button
-            if await self._try_chart_standard_export_format(chart, filename, export_format):
-                return True
-            
-            # Approach 3: Keyboard shortcuts
-            if await self._try_keyboard_export('chart', filename):
-                return True
-            
-            # Approach 4: Right-click context menu on chart
-            if await self._try_chart_context_menu_export(chart, filename):
-                return True
-            
-            # Approach 5: Direct API call (if available)
-            if await self._try_chart_api_export(chart, filename):
-                return True
-            
-            logger.warning(f"⚠️  All chart {export_format} export approaches failed")
-            return False
-            
-        except Exception as e:
-            logger.error(f"❌ Error in chart {export_format} export: {e}")
-            return False
-    
-    async def _try_chart_standard_export_format(self, chart, filename, export_format='image'):
-        """Try standard export button approach for charts with different formats"""
-        try:
-            logger.info(f"🔄 Trying standard chart export as {export_format}...")
-            
-            # Try to find and click on the chart element first
-            chart_position = chart.get('chart_position')
-            if chart_position:
-                # Click on the chart area to focus it
-                x = chart_position.get('x', 0) + chart_position.get('width', 100) // 2
-                y = chart_position.get('y', 0) + chart_position.get('height', 100) // 2
-                
-                try:
-                    await self.page.mouse.click(x, y)
-                    await asyncio.sleep(1)  # Wait for any menu to appear
-                except:
-                    pass
-            
-            # Look for chart export button
-            if not await self._find_and_click_export_button('chart'):
-                return False
-            
-            # Select the appropriate export option based on format
-            if export_format == 'image':
-                if not await self._select_download_as_image():
-                    return False
-            elif export_format == 'excel':
-                if not await self._select_download_as_excel():
-                    return False
-            else:
-                logger.warning(f"⚠️  Unsupported export format: {export_format}")
-                return False
-            
-            # Handle the download
-            download_path = await self._handle_download_dialog(filename)
-            return download_path is not None
-            
-        except Exception as e:
-            logger.error(f"❌ Standard chart export failed for {export_format}: {e}")
-            return False
-    
-    async def _try_chart_standard_export(self, chart, filename):
-        """Try standard export button approach for charts"""
-        try:
-            logger.info("🔄 Trying standard chart export...")
-            
-            # Try to find and click on the chart element first
-            chart_position = chart.get('chart_position')
-            if chart_position:
-                # Click on the chart area to focus it
-                x = chart_position.get('x', 0) + chart_position.get('width', 100) // 2
-                y = chart_position.get('y', 0) + chart_position.get('height', 100) // 2
-                
-                try:
-                    await self.page.mouse.click(x, y)
-                    await asyncio.sleep(1)  # Wait for any menu to appear
-                except:
-                    pass
-            
-            # Look for chart export button
-            if not await self._find_and_click_export_button('chart'):
-                return False
-            
-            # Select Download as Image option
-            if not await self._select_download_as_image():
-                return False
-            
-            # Handle the download
-            download_path = await self._handle_download_dialog(filename)
-            return download_path is not None
-            
-        except Exception as e:
-            logger.error(f"❌ Standard chart export failed: {e}")
-            return False
-    
-    async def _try_chart_context_menu_export(self, chart, filename):
-        """Try right-click context menu for charts"""
-        try:
-            logger.info("🔄 Trying chart context menu export...")
-            
-            # Get chart position
-            chart_position = chart.get('chart_position')
-            if not chart_position:
-                return False
-            
-            # Calculate chart center
-            x = chart_position.get('x', 0) + chart_position.get('width', 100) // 2
-            y = chart_position.get('y', 0) + chart_position.get('height', 100) // 2
-            
-            # Right-click on chart to open context menu
-            await self.page.mouse.click(x, y, button='right')
-            await asyncio.sleep(1)
-            
-            # Look for export options in context menu
-            context_selectors = [
-                'text="Export"',
-                'text="Download"', 
-                'text="Save as"',
-                'text="Image"',
-                '.context-menu-item:has-text("Export")',
-                '.context-menu-item:has-text("Image")'
-            ]
-            
-            for selector in context_selectors:
-                try:
-                    if await self.page.is_visible(selector):
-                        await self.page.click(selector)
-                        await asyncio.sleep(1)
-                        
-                        # Try to select image option
-                        if await self._select_download_as_image():
-                            download_path = await self._handle_download_dialog(filename)
-                            if download_path:
-                                return True
-                except:
-                    continue
-            
-            # Close context menu by clicking elsewhere
-            await self.page.mouse.click(10, 10)
-            
-            return False
-            
-        except Exception as e:
-            logger.error(f"❌ Chart context menu export failed: {e}")
-            return False
-    
-    async def _try_chart_api_export(self, chart, filename):
-        """Try direct API call for chart export (if available)"""
-        try:
-            logger.info("🔄 Trying chart API export...")
-            
-            # Extract chart ID from chart data if available
-            chart_id = chart.get('chart_id') or chart.get('id')
-            if not chart_id:
-                return False
-            
-            # Try Superset API endpoints for chart export
-            api_endpoints = [
-                f'/api/v1/chart/{chart_id}/export/png',
-                f'/api/v1/chart/{chart_id}/export/image',
-                f'/chart/{chart_id}/export/png',
-                f'/chart/{chart_id}/export/image'
-            ]
-            
-            for endpoint in api_endpoints:
-                try:
-                    api_url = f"{self.superset_url}{endpoint}"
-                    
-                    # Make API call with session cookies
-                    response = await self.page.request.get(api_url)
-                    
-                    if response.status == 200:
-                        # Save the response content as image
-                        download_path = os.path.join(self.screenshots_dir, filename)
-                        with open(download_path, 'wb') as f:
-                            f.write(response.body())
-                        
-                        logger.info(f"✅ Chart API export successful: {download_path}")
-                        return True
-                        
-                except:
-                    continue
-            
-            return False
-            
-        except Exception as e:
-            logger.error(f"❌ Chart API export failed: {e}")
-            return False
-    
+        
     async def _capture_chart_screenshot_fallback(self, chart, dashboard_title, timestamp):
         """Fallback method using original screenshot approach"""
         try:
@@ -2886,35 +1756,6 @@ class SupersetAutomation:
                 'button:has(.anticon-ellipsis)',
                 'button:has(.anticon-more)'
             ],
-            # Chart export selectors - Updated for actual dashboard chart structure
-            'chart_export': [
-                # Specific slice control buttons (found in analysis)
-                '[id^="slice_"][id$="-controls"]',
-                '[id^="slice_"][id$="-controls"].ant-dropdown-trigger',
-                '[id^="slice_"][id$="-controls"].css-11peazl',
-                # More Options buttons with aria-label
-                '.ant-dropdown-trigger[aria-label*="More Options"]',
-                '.ant-dropdown-trigger[aria-label*="more options"]',
-                # Chart header actions (fallback)
-                '.chart-header .ant-dropdown-trigger',
-                '.chart-header .ant-btn',
-                '.visualization-header .ant-dropdown-trigger',
-                '.visualization-header .ant-btn',
-                # Three dots menu for charts
-                '.chart-container .ant-dropdown-trigger',
-                '.visualization-container .ant-dropdown-trigger',
-                '[data-test="chart-header"] .ant-dropdown-trigger',
-                # Direct chart export
-                '[data-test="chart-export"]',
-                '.chart-export-button',
-                '.visualization-export',
-                # Hover actions
-                '.chart-container:hover .ant-btn',
-                '.visualization-container:hover .ant-btn',
-                # Alternative selectors
-                '.ant-card-head-extra .ant-dropdown-trigger',
-                '.ant-card-extra .ant-dropdown-trigger'
-            ],
             # Download as image selectors - Updated for actual menu items
             'download_image': [
                 # Direct text matches (found in analysis)
@@ -2964,8 +1805,13 @@ class SupersetAutomation:
         }
     
     async def _find_and_click_export_button(self, export_type='dashboard'):
-        """Find and click export button for dashboard or chart with enhanced detection"""
+        """Find and click export button for dashboard with enhanced detection"""
         try:
+            # Only support dashboard export
+            if export_type != 'dashboard':
+                logger.error(f"❌ Unsupported export type: {export_type}")
+                return False
+                
             selectors = self._get_superset_export_selectors()
             export_selectors = selectors.get(f'{export_type}_export', [])
             
