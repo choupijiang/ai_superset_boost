@@ -10,6 +10,7 @@ import json
 import logging
 import tempfile
 import requests
+import glob
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from dotenv import load_dotenv
@@ -63,7 +64,7 @@ class SupersetAutomation:
         self._download_tasks = []
         
         # Configuration
-        self.timeout = 20000  # Reduced from 30 to 20 seconds for faster processing
+        self.timeout = int(os.environ.get('SUPERSET_TIMEOUT', '120000'))  # Default 120 seconds, configurable via env
         self.headless = True  # Set to False for debugging
         
         logger.info(f"✅ SupersetAutomation initialized (Real Mode)")
@@ -103,8 +104,13 @@ class SupersetAutomation:
     async def close_browser(self):
         """Close browser and cleanup"""
         try:
+            logger.info("🧹 Starting browser cleanup...")
+            
             # Cancel any pending download tasks
             if hasattr(self, '_download_tasks'):
+                task_count = len(self._download_tasks)
+                logger.info(f"📋 Cancelling {task_count} pending download tasks...")
+                
                 for task in self._download_tasks:
                     if not task.done():
                         task.cancel()
@@ -113,13 +119,21 @@ class SupersetAutomation:
                         except asyncio.CancelledError:
                             pass
                 self._download_tasks.clear()
+                logger.info("✅ Download tasks cleared")
             
             if self.page:
+                logger.info("📄 Closing browser page...")
                 await self.page.close()
+                logger.info("✅ Browser page closed")
+            
             if self.browser:
+                logger.info("🌐 Closing browser...")
                 await self.browser.close()
+                logger.info("✅ Browser closed")
             if self.playwright:
+                logger.info("🎭 Stopping playwright...")
                 await self.playwright.stop()
+                logger.info("✅ Playwright stopped")
             
             self.page = None
             self.browser = None
@@ -129,6 +143,53 @@ class SupersetAutomation:
             
         except Exception as e:
             logger.warning(f"⚠️  Error closing browser: {e}")
+    
+    def _log_screenshot_operation(self, operation: str, file_path: str, success: bool = True, error: str = None):
+        """Log screenshot file operations with detailed information"""
+        try:
+            file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+            status = "✅" if success else "❌"
+            
+            if success:
+                logger.info(f"{status} {operation}: {file_path} (Size: {file_size} bytes)")
+            else:
+                logger.error(f"{status} {operation}: {file_path} - {error}")
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to log screenshot operation: {e}")
+    
+    def cleanup_screenshots(self, dashboard_ids: List[str] = None):
+        """Clean up screenshot files, optionally for specific dashboards only"""
+        try:
+            logger.info("🧹 Starting screenshots cleanup...")
+            
+            if not os.path.exists(self.screenshots_dir):
+                logger.info("ℹ️ Screenshots directory does not exist")
+                return 0
+            
+            removed_count = 0
+            for file_path in glob.glob(os.path.join(self.screenshots_dir, "*.png")):
+                file_name = os.path.basename(file_path)
+                
+                # If dashboard_ids provided, only remove files for those dashboards
+                if dashboard_ids:
+                    should_remove = any(dashboard_id in file_name for dashboard_id in dashboard_ids)
+                    if not should_remove:
+                        continue
+                
+                try:
+                    os.remove(file_path)
+                    self._log_screenshot_operation("Screenshot deleted", file_path)
+                    removed_count += 1
+                except Exception as e:
+                    logger.error(f"❌ Failed to delete screenshot {file_path}: {e}")
+            
+            logger.info(f"✅ Screenshots cleanup completed: {removed_count} files removed")
+            return removed_count
+            
+        except Exception as e:
+            logger.error(f"❌ Error during screenshots cleanup: {e}")
+            return 0
     
     async def login_to_superset(self):
         """Login to Superset using Playwright"""
@@ -255,111 +316,6 @@ class SupersetAutomation:
             logger.error(f"❌ Login failed: {e}")
             return False
     
-    async def get_dashboard_charts_api(self, dashboard_id):
-        """Get chart information for a specific dashboard using Superset API"""
-        try:
-            logger.info(f"📊 Getting charts for dashboard {dashboard_id} from API...")
-            
-            # Use Superset API endpoint for dashboard charts
-            api_url = f"{self.superset_url}/api/v1/dashboard/{dashboard_id}/charts"
-            
-            # Prepare headers with authentication if we have session cookies
-            headers = {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            }
-            
-            # Add session cookies if available
-            cookies = {}
-            if self.session_cookies:
-                for cookie in self.session_cookies:
-                    cookies[cookie['name']] = cookie['value']
-            
-            # Make API request
-            response = requests.get(api_url, headers=headers, cookies=cookies, timeout=30)
-            
-            if response.status_code == 200:
-                data = response.json()
-                
-                # Extract chart information from API response
-                charts = []
-                
-                # Handle different possible response formats
-                if 'result' in data:
-                    # Standard Superset API response format
-                    chart_items = data['result']
-                elif 'charts' in data:
-                    # Alternative format
-                    chart_items = data['charts']
-                else:
-                    # Direct list
-                    chart_items = data if isinstance(data, list) else []
-                
-                for chart in chart_items:
-                    # Extract chart information
-                    chart_id = chart.get('id')
-                    chart_name = chart.get('slice_name', chart.get('name', chart.get('chart_name', f'Chart_{chart_id}')))
-                    visualization_type = chart.get('viz_type', 'unknown')
-                    description = chart.get('description', '')
-                    
-                    charts.append({
-                        'id': chart_id,
-                        'name': chart_name,
-                        'slice_name': chart_name,
-                        'viz_type': visualization_type,
-                        'description': description,
-                        'dashboard_id': dashboard_id
-                    })
-                
-                logger.info(f"✅ Found {len(charts)} charts via API for dashboard {dashboard_id}")
-                
-                # Log chart information
-                logger.info("=" * 80)
-                logger.info(f"Charts for Dashboard {dashboard_id}:")
-                logger.info("=" * 80)
-                logger.info(f"{'Chart ID':<10} {'Chart Name':<40} {'Type'}")
-                logger.info("-" * 80)
-                
-                for chart in charts:
-                    chart_id = chart.get('id', 'N/A')
-                    chart_name = chart.get('name', 'N/A')
-                    viz_type = chart.get('viz_type', 'N/A')
-                    logger.info(f"{chart_id:<10} {chart_name:<40} {viz_type}")
-                
-                logger.info("=" * 80)
-                
-                return charts
-                
-            elif response.status_code == 401:
-                logger.warning("⚠️ Authentication required, trying to login...")
-                
-                # Try to login and retry
-                if await self.login_to_superset():
-                    # Retry with fresh session
-                    return await self.get_dashboard_charts_api(dashboard_id)
-                else:
-                    logger.error("❌ Login failed, cannot get chart list")
-                    return []
-                    
-            elif response.status_code == 403:
-                logger.error("❌ Permission denied accessing chart API")
-                return []
-                
-            elif response.status_code == 404:
-                logger.warning(f"⚠️ Chart API endpoint not found for dashboard {dashboard_id}")
-                return []
-                
-            else:
-                logger.warning(f"⚠️ API request failed with status {response.status_code}")
-                return []
-                
-        except requests.exceptions.RequestException as e:
-            logger.error(f"❌ API request failed: {e}")
-            return []
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to get chart list: {e}")
-            return []
 
     async def get_dashboard_list(self):
         """Get real list of available dashboards from Superset API"""
@@ -594,7 +550,7 @@ class SupersetAutomation:
             logger.error(f"❌ Fallback method failed: {e}")
             return []
     
-    async def capture_dashboard_screenshot(self, dashboard, max_retries=2):
+    async def capture_dashboard_screenshot(self, dashboard, max_retries=1, context_callback=None):
         """Capture screenshot of a specific dashboard using Superset's Download as Image"""
         try:
             logger.info(f"📸 Capturing dashboard: {dashboard['title']}")
@@ -611,7 +567,7 @@ class SupersetAutomation:
                     dashboard_url = dashboard['url'] if dashboard['url'].startswith('http') else f"{self.superset_url}{dashboard['url']}"
                     await self.page.goto(dashboard_url)
                     
-                    # Use enhanced dashboard loading with error checking
+                    # Use relaxed dashboard loading
                     dashboard_loaded = await self._wait_for_dashboard_load(dashboard['title'])
                     
                     if dashboard_loaded:
@@ -620,7 +576,7 @@ class SupersetAutomation:
                     else:
                         if attempt < max_retries:
                             logger.warning(f"⚠️ Dashboard load failed, retrying... ({attempt + 1}/{max_retries + 1})")
-                            await asyncio.sleep(2)  # Wait before retry
+                            await asyncio.sleep(1)  # Reduced wait before retry
                         else:
                             logger.error(f"❌ Dashboard '{dashboard['title']}' failed to load properly after {max_retries + 1} attempts")
                             
@@ -638,7 +594,7 @@ class SupersetAutomation:
                 except Exception as attempt_error:
                     if attempt < max_retries:
                         logger.warning(f"⚠️ Attempt {attempt + 1} failed: {attempt_error}, retrying...")
-                        await asyncio.sleep(2)
+                        await asyncio.sleep(1)
                     else:
                         logger.error(f"❌ All {max_retries + 1} attempts failed: {attempt_error}")
                         return None
@@ -649,17 +605,17 @@ class SupersetAutomation:
             screenshot_filename = f"dashboard_{clean_title}_{timestamp}.png"
             screenshot_path = os.path.join(self.screenshots_dir, screenshot_filename)
             
-            # Try Superset's Download as Image functionality
+            # Try Superset's Download as Image functionality first (priority)
             logger.info("🔄 Attempting Superset Download as Image...")
-            export_success = await self._export_dashboard_as_image(screenshot_filename, dashboard['title'])
+            export_success = await self._export_dashboard_as_image(screenshot_filename, dashboard['title'], dashboard, context_callback)
             
             if export_success:
-                logger.info(f"✅ Dashboard exported using Superset: {screenshot_path}")
+                logger.info(f"✅ Dashboard exported using Superset native download: {screenshot_path}")
                 return screenshot_path
             else:
-                # Fallback to original screenshot method
-                logger.warning("⚠️  Superset export failed, falling back to screenshot method")
-                return await self._capture_dashboard_screenshot_fallback(dashboard, screenshot_path)
+                # Fallback to screenshot method
+                logger.warning("⚠️ Superset export failed, falling back to screenshot method")
+                return await self._capture_dashboard_screenshot_fallback(dashboard, screenshot_path, context_callback)
             
         except Exception as e:
             logger.error(f"❌ Failed to capture dashboard screenshot: {e}")
@@ -714,142 +670,110 @@ class SupersetAutomation:
             logger.warning(f"⚠️ Could not extract dashboard name: {e}")
             return "Unknown_Dashboard"
     
-    async def _get_chart_name_from_element(self, chart_element):
-        """Extract chart name from chart element"""
-        try:
-            # Try to get chart name from various attributes
-            name_selectors = [
-                '[data-test="chart-title"]',
-                '.chart-title',
-                '.visualization-title',
-                '.ant-card-head-title',
-                'h3', 'h4', 'h5',
-                '[class*="title"]'
-            ]
-            
-            for selector in name_selectors:
-                try:
-                    title_element = await chart_element.query_selector(selector)
-                    if title_element:
-                        text = await title_element.text_content()
-                        if text and text.strip():
-                            return text.strip()
-                except:
-                    continue
-            
-            # Fallback: get from chart ID
-            chart_id = await chart_element.get_attribute('id')
-            if chart_id:
-                return f"Chart_{chart_id}"
-            
-            return "Unknown_Chart"
-            
-        except Exception as e:
-            logger.warning(f"⚠️ Could not extract chart name: {e}")
-            return "Unknown_Chart"
     
-    async def _export_dashboard_as_image(self, filename, dashboard_title=None):
-        """Export dashboard using Superset's native Download as Image functionality with improved download handling"""
+    async def _export_dashboard_as_image(self, filename, dashboard_title=None, dashboard=None, context_callback=None):
+        """Export dashboard using Superset's native Download as Image functionality"""
         try:
-            logger.info("🔄 Starting dashboard export with improved native functionality...")
+            logger.info("🔄 Starting dashboard export with native functionality...")
             
-            # Approach 1: Enhanced native export with proper download event handling
-            if await self._try_enhanced_native_export('dashboard', filename, dashboard_title):
+            # Wait a bit for page to stabilize
+            await asyncio.sleep(2)
+            
+            # Approach 1: Try direct export button detection and click
+            if await self._try_direct_export_button(filename, dashboard, context_callback):
                 return True
             
-            # Approach 2: Standard export button (fallback)
-            if await self._try_standard_export('dashboard', filename):
+            # Approach 2: Try menu-based export
+            if await self._try_menu_export(filename, dashboard, context_callback):
                 return True
             
-            # Approach 3: Keyboard shortcuts
-            if await self._try_keyboard_export('dashboard', filename):
-                return True
-            
-            # Approach 4: Right-click context menu
-            if await self._try_context_menu_export('dashboard', filename):
-                return True
-            
-            # Approach 5: Direct API call (if available)
-            if await self._try_api_export('dashboard', filename):
-                return True
-            
-            logger.warning("⚠️  All export approaches failed")
+            logger.warning("⚠️ All export approaches failed")
             return False
             
         except Exception as e:
             logger.error(f"❌ Error in dashboard export: {e}")
             return False
     
-    async def _try_enhanced_native_export(self, export_type, filename, dashboard_title=None):
-        """Try enhanced native export with proper download event handling based on Playwright best practices"""
+    async def _try_direct_export_button(self, filename, dashboard=None, context_callback=None):
+        """Try to find and click direct export button"""
         try:
-            logger.info(f"🔄 Trying enhanced native export for {export_type}...")
+            logger.info("🔄 Trying direct export button...")
             
-            # Ensure we're on a dashboard page
-            if export_type == 'dashboard':
-                await self._wait_for_dashboard_load(dashboard_title)
+            # Look for any direct export/download buttons
+            export_selectors = [
+                'button[title*="export"]',
+                'button[title*="Export"]',
+                'button[aria-label*="export"]',
+                'button[aria-label*="Export"]',
+                '.export-button',
+                '.dashboard-export',
+                'button:has-text("Export")',
+                'button:has-text("Download")',
+                'button:has-text("export")',
+                'button:has-text("download")'
+            ]
             
-            # Set up download listener BEFORE triggering download
-            download_path = os.path.join(self.screenshots_dir, filename)
-            
-            # Method 1: Use page.waitForEvent('download') - Playwright recommended approach
-            try:
-                logger.info("🎯 Setting up download event listener...")
-                
-                # Start download listener
-                download_task = asyncio.create_task(self._wait_for_download_event())
-                self._download_tasks.append(download_task)
-                
-                # Trigger the download
-                if await self._trigger_native_download(export_type):
-                    try:
-                        # Wait for download with timeout
-                        download = await asyncio.wait_for(download_task, timeout=90000)  # 90 seconds total
+            for selector in export_selectors:
+                try:
+                    if await self.page.is_visible(selector, timeout=2000):
+                        # Set up download listener
+                        download_task = asyncio.create_task(self._wait_for_download_event())
                         
-                        # Save the download
-                        await download.save_as(download_path)
-                        logger.info(f"✅ Enhanced native export successful: {download_path}")
-                        return True
+                        # Click the button
+                        await self.page.click(selector)
+                        logger.info(f"✅ Found and clicked export button: {selector}")
                         
-                    except asyncio.TimeoutError:
-                        logger.warning("⚠️ Download event timeout")
-                        # Cancel the task
-                        if not download_task.done():
-                            download_task.cancel()
-                    except Exception as download_error:
-                        logger.error(f"❌ Download handling error: {download_error}")
-                        # Cancel the task
-                        if not download_task.done():
-                            download_task.cancel()
-                
-                # Clean up completed task
-                if download_task in self._download_tasks:
-                    self._download_tasks.remove(download_task)
-                
-            except Exception as e:
-                logger.error(f"❌ Enhanced export method failed: {e}")
+                        # Wait for download
+                        try:
+                            download = await asyncio.wait_for(download_task, timeout=self.timeout)
+                            download_path = os.path.join(self.screenshots_dir, filename)
+                            await download.save_as(download_path)
+                            logger.info(f"✅ Direct export successful: {download_path}")
+                            
+                            # Trigger context analysis callback if provided
+                            if context_callback:
+                                try:
+                                    await context_callback({
+                                        'dashboard_id': dashboard.get('id'),
+                                        'dashboard_title': dashboard.get('title'),
+                                        'screenshot_path': download_path,
+                                        'success': True
+                                    })
+                                except Exception as callback_error:
+                                    logger.warning(f"⚠️ Context callback failed: {callback_error}")
+                            
+                            return True
+                        except asyncio.TimeoutError:
+                            logger.warning("⚠️ Direct export timeout")
+                            if not download_task.done():
+                                download_task.cancel()
+                        except Exception as download_error:
+                            logger.error(f"❌ Direct export download error: {download_error}")
+                            if not download_task.done():
+                                download_task.cancel()
+                        
+                        # Clean up
+                        if download_task in self._download_tasks:
+                            self._download_tasks.remove(download_task)
+                        
+                except:
+                    continue
             
-            # Clean up task if it exists
-            if 'download_task' in locals() and download_task in self._download_tasks:
-                self._download_tasks.remove(download_task)
-            
-            # Method 2: Fallback to existing approach if enhanced method fails
-            logger.info("🔄 Falling back to standard export approach...")
-            return await self._try_standard_export(export_type, filename)
+            return False
             
         except Exception as e:
-            logger.error(f"❌ Enhanced native export failed: {e}")
+            logger.error(f"❌ Direct export button failed: {e}")
             return False
 
     async def _wait_for_download_event(self):
-        """Wait for download event using Playwright's recommended approach with reduced timeout"""
+        """Wait for download event using Playwright's recommended approach with configurable timeout"""
         try:
             logger.info("🎯 Waiting for download event...")
-            download = await self.page.wait_for_event('download', timeout=60000)  # Reduced to 60 seconds
+            download = await self.page.wait_for_event('download', timeout=self.timeout)
             logger.info("✅ Download event detected")
             return download
         except asyncio.TimeoutError:
-            logger.warning("⚠️ Download event timeout after 60 seconds")
+            logger.warning(f"⚠️ Download event timeout after {self.timeout/1000} seconds")
             raise
         except Exception as e:
             logger.error(f"❌ Wait for download event failed: {e}")
@@ -955,30 +879,125 @@ class SupersetAutomation:
         
     
     
-    async def _try_standard_export(self, export_type, filename):
-        """Try standard export button approach for dashboard"""
+    async def _try_menu_export(self, filename, dashboard=None, context_callback=None):
+        """Try menu-based export approach"""
         try:
-            logger.info(f"🔄 Trying standard export for {export_type}...")
+            logger.info("🔄 Trying menu export...")
             
-            # Only support dashboard export
-            if export_type != 'dashboard':
-                logger.error(f"❌ Unsupported export type: {export_type}")
-                return False
+            # Find and click actions/menu button
+            menu_selectors = [
+                '.dashboard-header .ant-dropdown-trigger',
+                '.ant-dropdown-trigger button[aria-label*="more"]',
+                'button[aria-label*="more"]',
+                '.header-actions .ant-dropdown-trigger',
+                'button[aria-label*="Actions"]',
+                'button[aria-label*="actions"]',
+                '.ant-btn-icon:has(.anticon-ellipsis)',
+                '.ant-btn:has(.anticon-more)',
+                'button:has(.anticon-ellipsis)',
+                'button:has(.anticon-more)'
+            ]
             
-            # Find and click export button
-            if not await self._find_and_click_export_button(export_type):
-                return False
+            for selector in menu_selectors:
+                try:
+                    if await self.page.is_visible(selector, timeout=2000):
+                        await self.page.click(selector)
+                        logger.info(f"✅ Found and clicked menu button: {selector}")
+                        
+                        # Wait for menu to appear
+                        await asyncio.sleep(1)
+                        
+                        # Look for download/export options
+                        download_selectors = [
+                            'text="Download"',
+                            'text="Export"',
+                            'text="download"',
+                            'text="export"',
+                            '.ant-dropdown-menu-item:has-text("Download")',
+                            '.ant-dropdown-menu-item:has-text("Export")',
+                            '.dropdown-menu-item:has-text("Download")',
+                            '.dropdown-menu-item:has-text("Export")'
+                        ]
+                        
+                        for dl_selector in download_selectors:
+                            try:
+                                if await self.page.is_visible(dl_selector, timeout=1000):
+                                    await self.page.click(dl_selector)
+                                    logger.info(f"✅ Found and clicked download option: {dl_selector}")
+                                    
+                                    # Wait for submenu
+                                    await asyncio.sleep(1)
+                                    
+                                    # Look for image option
+                                    image_selectors = [
+                                        'text="Download as Image"',
+                                        'text="Download as image"',
+                                        'text="Image"',
+                                        'text="image"',
+                                        'text="PNG"',
+                                        'text="png"',
+                                        '.ant-dropdown-menu-item:has-text("Image")',
+                                        '.ant-dropdown-menu-item:has-text("PNG")'
+                                    ]
+                                    
+                                    for img_selector in image_selectors:
+                                        try:
+                                            if await self.page.is_visible(img_selector, timeout=1000):
+                                                # Set up download listener
+                                                download_task = asyncio.create_task(self._wait_for_download_event())
+                                                
+                                                await self.page.click(img_selector)
+                                                logger.info(f"✅ Found and clicked image option: {img_selector}")
+                                                
+                                                # Wait for download
+                                                try:
+                                                    download = await asyncio.wait_for(download_task, timeout=self.timeout)
+                                                    download_path = os.path.join(self.screenshots_dir, filename)
+                                                    await download.save_as(download_path)
+                                                    logger.info(f"✅ Menu export successful: {download_path}")
+                                                    
+                                                    # Trigger context analysis callback if provided
+                                                    if context_callback:
+                                                        try:
+                                                            await context_callback({
+                                                                'dashboard_id': dashboard.get('id'),
+                                                                'dashboard_title': dashboard.get('title'),
+                                                                'screenshot_path': download_path,
+                                                                'success': True
+                                                            })
+                                                        except Exception as callback_error:
+                                                            logger.warning(f"⚠️ Context callback failed: {callback_error}")
+                                                    
+                                                    return True
+                                                except asyncio.TimeoutError:
+                                                    logger.warning("⚠️ Menu export timeout")
+                                                    if not download_task.done():
+                                                        download_task.cancel()
+                                                except Exception as download_error:
+                                                    logger.error(f"❌ Menu export download error: {download_error}")
+                                                    if not download_task.done():
+                                                        download_task.cancel()
+                                                
+                                                # Clean up
+                                                if download_task in self._download_tasks:
+                                                    self._download_tasks.remove(download_task)
+                                                
+                                        except:
+                                            continue
+                                    
+                            except:
+                                continue
+                        
+                        # Close menu if no success
+                        await self.page.mouse.click(10, 10)
+                        
+                except:
+                    continue
             
-            # Select Download as Image option
-            if not await self._select_download_as_image():
-                return False
-            
-            # Handle the download
-            download_path = await self._handle_download_dialog(filename)
-            return download_path is not None
+            return False
             
         except Exception as e:
-            logger.error(f"❌ Standard export failed: {e}")
+            logger.error(f"❌ Menu export failed: {e}")
             return False
     
     async def _try_keyboard_export(self, export_type, filename):
@@ -1113,13 +1132,26 @@ class SupersetAutomation:
             logger.error(f"❌ API export failed: {e}")
             return False
     
-    async def _capture_dashboard_screenshot_fallback(self, dashboard, screenshot_path):
+    async def _capture_dashboard_screenshot_fallback(self, dashboard, screenshot_path, context_callback=None):
         """Fallback method using original screenshot approach"""
         try:
             # Take full page screenshot
             await self.page.screenshot(path=screenshot_path, full_page=True)
             
             logger.info(f"✅ Dashboard screenshot saved (fallback): {screenshot_path}")
+            
+            # Trigger context analysis callback if provided
+            if context_callback:
+                try:
+                    await context_callback({
+                        'dashboard_id': dashboard.get('id'),
+                        'dashboard_title': dashboard.get('title'),
+                        'screenshot_path': screenshot_path,
+                        'success': True
+                    })
+                except Exception as callback_error:
+                    logger.warning(f"⚠️ Context callback failed: {callback_error}")
+            
             return screenshot_path
             
         except Exception as e:
@@ -1166,9 +1198,9 @@ class SupersetAutomation:
             return []
     
     async def capture_all_dashboards_with_details(self):
-        """Capture detailed dashboard information with charts"""
+        """Capture dashboard information without charts"""
         try:
-            logger.info("🚀 Starting detailed dashboard capture...")
+            logger.info("🚀 Starting dashboard capture...")
             
             # Login if not already logged in
             if not self.session_cookies:
@@ -1183,30 +1215,89 @@ class SupersetAutomation:
                 logger.error("❌ No dashboards found")
                 return []
             
-            # Limit to first 3 dashboards for performance
-            dashboards_to_process = dashboards[:3]
-            logger.info(f"📊 Processing {len(dashboards_to_process)} dashboards...")
+            # Process all dashboards
+            logger.info(f"📊 Processing {len(dashboards)} dashboards...")
             
             all_dashboards_data = []
             
-            for dashboard in dashboards_to_process:
+            for dashboard in dashboards:
                 try:
-                    dashboard_data = await self._explore_dashboard_details(dashboard)
+                    dashboard_data = await self._capture_dashboard_only(dashboard)
                     if dashboard_data:
                         all_dashboards_data.append(dashboard_data)
                     
-                    # Add delay between dashboards (reduced from 3 to 2 seconds)
+                    # Add delay between dashboards
                     await asyncio.sleep(2)
                     
                 except Exception as e:
                     logger.error(f"❌ Error processing dashboard {dashboard['title']}: {e}")
                     continue
             
-            logger.info(f"✅ Captured detailed data for {len(all_dashboards_data)} dashboards")
+            logger.info(f"✅ Captured data for {len(all_dashboards_data)} dashboards")
             return all_dashboards_data
             
         except Exception as e:
-            logger.error(f"❌ Failed to capture detailed dashboards: {e}")
+            logger.error(f"❌ Failed to capture dashboards: {e}")
+            return []
+    
+    async def capture_dashboards_progressively(self, callback=None):
+        """
+        Capture dashboards progressively with callback function
+        This allows for immediate AI analysis after each dashboard capture
+        
+        Args:
+            callback: Optional callback function to call after each dashboard capture
+                     Function signature: callback(dashboard_data, dashboard_index, total_dashboards)
+        """
+        try:
+            logger.info("🚀 Starting progressive dashboard capture...")
+            
+            # Login if not already logged in
+            if not self.session_cookies:
+                if not await self.login_to_superset():
+                    logger.error("❌ Login failed, cannot capture dashboards")
+                    return []
+            
+            # Get dashboard list
+            dashboards = await self.get_dashboard_list()
+            
+            if not dashboards:
+                logger.error("❌ No dashboards found")
+                return []
+            
+            # Process dashboards one by one with callback
+            logger.info(f"📊 Processing {len(dashboards)} dashboards progressively...")
+            
+            all_dashboards_data = []
+            
+            for index, dashboard in enumerate(dashboards):
+                try:
+                    logger.info(f"📸 Capturing dashboard {index + 1}/{len(dashboards)}: {dashboard['title']}")
+                    
+                    dashboard_data = await self._capture_dashboard_only(dashboard)
+                    if dashboard_data:
+                        all_dashboards_data.append(dashboard_data)
+                        
+                        # Call callback function if provided
+                        if callback:
+                            try:
+                                await callback(dashboard_data, index, len(dashboards))
+                            except Exception as callback_error:
+                                logger.error(f"❌ Callback error for dashboard {dashboard['title']}: {callback_error}")
+                                # Continue with next dashboard even if callback fails
+                    
+                    # Add delay between dashboards
+                    await asyncio.sleep(2)
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error processing dashboard {dashboard['title']}: {e}")
+                    continue
+            
+            logger.info(f"✅ Progressively captured data for {len(all_dashboards_data)} dashboards")
+            return all_dashboards_data
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to capture dashboards progressively: {e}")
             return []
 
   
@@ -1214,10 +1305,10 @@ class SupersetAutomation:
     
     
     
-    async def _explore_dashboard_details(self, dashboard):
-        """Explore dashboard and extract detailed information"""
+    async def _capture_dashboard_only(self, dashboard):
+        """Capture dashboard screenshot and basic information"""
         try:
-            logger.info(f"🔍 Exploring dashboard: {dashboard['title']}")
+            logger.info(f"📸 Capturing dashboard: {dashboard['title']}")
             
             if not self.page:
                 await self.initialize_browser()
@@ -1227,7 +1318,7 @@ class SupersetAutomation:
             await self.page.goto(dashboard_url)
             await self.page.wait_for_load_state('networkidle')
             
-            # Wait for dashboard content to load (reduced from 5 to 3 seconds)
+            # Wait for dashboard content to load
             await asyncio.sleep(3)
             
             # Generate timestamp
@@ -1235,339 +1326,24 @@ class SupersetAutomation:
             clean_title = self._clean_filename(dashboard['title'])
             
             # Capture full dashboard screenshot
-            dashboard_screenshot = f"dashboard_{clean_title}_full_{timestamp}.png"
+            dashboard_screenshot = f"dashboard_{clean_title}_{timestamp}.png"
             dashboard_screenshot_path = os.path.join(self.screenshots_dir, dashboard_screenshot)
             await self.page.screenshot(path=dashboard_screenshot_path, full_page=True)
-            
-            # Extract chart information
-            charts_data = await self._extract_charts_data(clean_title, timestamp)
             
             return {
                 'dashboard_id': dashboard['id'],
                 'dashboard_title': dashboard['title'],
                 'dashboard_screenshot': dashboard_screenshot,
                 'dashboard_url': dashboard_url,
-                'charts': charts_data,
-                'total_charts': len(charts_data),
                 'timestamp': timestamp
             }
             
         except Exception as e:
-            logger.error(f"❌ Failed to explore dashboard {dashboard['title']}: {e}")
+            logger.error(f"❌ Failed to capture dashboard {dashboard['title']}: {e}")
             return None
     
-    async def _extract_charts_data(self, dashboard_title, timestamp):
-        """Extract chart information and screenshots from dashboard"""
-        try:
-            logger.info(f"📊 Extracting charts data...")
-            
-            # JavaScript to extract chart information with enhanced detection
-            charts = await self.page.evaluate("""
-                () => {
-                    const charts = [];
-                    
-                    // Try multiple selectors for chart containers
-                    const chartSelectors = [
-                        '[data-test="chart-container"]',
-                        '.chart-container',
-                        '.visualization-container',
-                        '.ant-card',
-                        '.dashboard-chart',
-                        '.slice_container',
-                        '.chart',
-                        '[class*="chart"]',
-                        '[class*="visualization"]',
-                        '.react-grid-item',
-                        '.grid-item',
-                        '[data-grid-item]'
-                    ];
-                    
-                    let chartElements = [];
-                    for (const selector of chartSelectors) {
-                        const elements = document.querySelectorAll(selector);
-                        if (elements.length > 0) {
-                            chartElements = Array.from(elements);
-                            break;
-                        }
-                    }
-                    
-                    // Filter out elements that are too small or hidden
-                    chartElements = chartElements.filter(function(element) {
-                        const rect = element.getBoundingClientRect();
-                        const style = window.getComputedStyle(element);
-                        
-                        // Skip if element is not visible or too small
-                        if (rect.width < 50 || rect.height < 50) return false;
-                        if (style.display === 'none') return false;
-                        if (style.visibility === 'hidden') return false;
-                        if (style.opacity === '0') return false;
-                        
-                        // Skip if element is outside viewport
-                        if (rect.bottom < 0 || rect.top > window.innerHeight) return false;
-                        if (rect.right < 0 || rect.left > window.innerWidth) return false;
-                        
-                        return true;
-                    });
-                    
-                    chartElements.forEach(function(element, index) {
-                        const rect = element.getBoundingClientRect();
-                        
-                        // Try to extract chart title with multiple strategies
-                        let title = 'Unknown Chart';
-                        
-                        // Strategy 1: Look for title elements within the chart
-                        const titleSelectors = [
-                            '.chart-title',
-                            '.title', 
-                            '.chart-header',
-                            '.visualization-header',
-                            'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-                            '[data-test="chart-title"]',
-                            '.ant-card-head-title'
-                        ];
-                        
-                        for (let i = 0; i < titleSelectors.length; i++) {
-                            const selector = titleSelectors[i];
-                            const titleElement = element.querySelector(selector);
-                            if (titleElement && titleElement.textContent.trim()) {
-                                title = titleElement.textContent.trim();
-                                break;
-                            }
-                        }
-                        
-                        // Strategy 2: Use element attributes
-                        if (title === 'Unknown Chart') {
-                            title = element.getAttribute('title') ||
-                                     element.getAttribute('data-chart-title') ||
-                                     element.getAttribute('aria-label') ||
-                                     'Chart ' + (index + 1);
-                        }
-                        
-                        // Strategy 3: Look for nearby text
-                        if (title === 'Unknown Chart') {
-                            const parentElement = element.parentElement;
-                            if (parentElement) {
-                                const nearbyText = parentElement.textContent.trim();
-                                if (nearbyText && nearbyText.length < 100) {
-                                    title = nearbyText;
-                                }
-                            }
-                        }
-                        
-                        // Get chart position with scroll offset
-                        const scrollX = window.pageXOffset || document.documentElement.scrollLeft;
-                        const scrollY = window.pageYOffset || document.documentElement.scrollTop;
-                        
-                        const position = {
-                            x: Math.round(rect.left + scrollX),
-                            y: Math.round(rect.top + scrollY),
-                            width: Math.round(rect.width),
-                            height: Math.round(rect.height)
-                        };
-                        
-                        // Additional chart metadata
-                        charts.push({
-                            chart_id: 'chart_' + (index + 1),
-                            chart_title: title.trim(),
-                            chart_position: position,
-                            element_class: element.className,
-                            element_tag: element.tagName,
-                            visible: rect.width > 0 && rect.height > 0,
-                            in_viewport: (
-                                rect.top >= 0 && 
-                                rect.left >= 0 && 
-                                rect.bottom <= window.innerHeight && 
-                                rect.right <= window.innerWidth
-                            )
-                        });
-                    });
-                    
-                    return charts;
-                }
-            """)
-            
-            logger.info(f"📊 Found {len(charts)} charts")
-            
-            # Capture individual chart screenshots
-            charts_data = []
-            for chart in charts:
-                try:
-                    # Skip charts that are not visible or in viewport
-                    if not chart.get('visible', True):
-                        logger.warning(f"⚠️  Skipping invisible chart: {chart['chart_title']}")
-                        continue
-                    
-                    # Skip charts that are too small
-                    chart_position = chart['chart_position']
-                    if chart_position['width'] < 50 or chart_position['height'] < 50:
-                        logger.warning(f"⚠️  Skipping too small chart: {chart['chart_title']} ({chart_position['width']}x{chart_position['height']})")
-                        continue
-                    
-                    chart_screenshot_path = await self._capture_chart_screenshot(
-                        chart, dashboard_title, timestamp
-                    )
-                    
-                    if chart_screenshot_path:
-                        chart_data = {
-                            'chart_id': chart['chart_id'],
-                            'chart_title': chart['chart_title'],
-                            'chart_screenshot': chart_screenshot_path,
-                            'chart_position': chart['chart_position'],
-                            'has_real_data': True,
-                            'processing_time': timestamp,
-                            'chart_type': 'extracted_from_ui',
-                            'visible': chart.get('visible', True),
-                            'in_viewport': chart.get('in_viewport', False),
-                            'element_class': chart.get('element_class', ''),
-                            'element_tag': chart.get('element_tag', '')
-                        }
-                        
-                        charts_data.append(chart_data)
-                    else:
-                        logger.warning(f"⚠️  Failed to capture screenshot for chart: {chart['chart_title']}")
-                    
-                except Exception as e:
-                    logger.error(f"❌ Failed to capture chart {chart['chart_title']}: {e}")
-                    continue
-            
-            return charts_data
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to extract charts data: {e}")
-            return []
     
-    async def _capture_chart_screenshot(self, chart, dashboard_title, timestamp):
-        """Capture screenshot of individual chart using Superset's Download as Image"""
-        try:
-            # Validate input parameters
-            if not chart or not isinstance(chart, dict):
-                logger.error("❌ Invalid chart parameter")
-                return None
-            
-            if not dashboard_title or not timestamp:
-                logger.error("❌ Missing dashboard_title or timestamp")
-                return None
-            
-            clean_title = self._clean_filename(dashboard_title)
-            clean_chart_title = self._clean_filename(chart.get('chart_title', 'unknown'))
-            
-            chart_screenshot = f"chart_{clean_title}_{clean_chart_title}_{timestamp}.png"
-            
-            # Ensure screenshots directory exists
-            os.makedirs(self.screenshots_dir, exist_ok=True)
-            
-            # Chart export functionality removed - using fallback screenshot method only
-            logger.warning("⚠️  Chart export functionality removed, using screenshot method")
-            return await self._capture_chart_screenshot_fallback(chart, dashboard_title, timestamp)
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to capture chart screenshot: {e}")
-            return None
     
-        
-    async def _capture_chart_screenshot_fallback(self, chart, dashboard_title, timestamp):
-        """Fallback method using original screenshot approach"""
-        try:
-            clean_title = self._clean_filename(dashboard_title)
-            clean_chart_title = self._clean_filename(chart.get('chart_title', 'unknown'))
-            
-            chart_screenshot = f"chart_{clean_title}_{clean_chart_title}_{timestamp}.png"
-            chart_screenshot_path = os.path.join(self.screenshots_dir, chart_screenshot)
-            
-            # Get chart position with validation
-            position = chart.get('chart_position')
-            if not position or not isinstance(position, dict):
-                logger.warning(f"⚠️  Invalid chart position for {chart.get('chart_title', 'unknown')}")
-                return None
-            
-            # Validate position values
-            required_keys = ['x', 'y', 'width', 'height']
-            if not all(key in position for key in required_keys):
-                logger.warning(f"⚠️  Missing position keys for {chart.get('chart_title', 'unknown')}")
-                return None
-            
-            if (position['x'] < 0 or position['y'] < 0 or 
-                position['width'] <= 0 or position['height'] <= 0):
-                logger.warning(f"⚠️  Invalid chart position values for {chart.get('chart_title', 'unknown')}: {position}")
-                return None
-            
-            # Get viewport size with fallback
-            try:
-                viewport_size = self.page.viewport_size
-                if not viewport_size:
-                    viewport_size = {'width': 1920, 'height': 1080}
-            except Exception as e:
-                logger.warning(f"⚠️  Failed to get viewport size: {e}")
-                viewport_size = {'width': 1920, 'height': 1080}
-            
-            # Adjust position to be within viewport bounds
-            x = max(0, min(position['x'], viewport_size['width'] - 100))
-            y = max(0, min(position['y'], viewport_size['height'] - 100))
-            width = min(position['width'], viewport_size['width'] - x)
-            height = min(position['height'], viewport_size['height'] - y)
-            
-            # Ensure minimum size
-            if width < 50 or height < 50:
-                logger.warning(f"⚠️  Chart too small for screenshot: {width}x{height}")
-                return None
-            
-            # Take screenshot of chart area with validation
-            try:
-                clip_params = {
-                    'x': x,
-                    'y': y,
-                    'width': width,
-                    'height': height
-                }
-                logger.info(f"📸 Capturing chart with clip params: {clip_params}")
-                
-                await self.page.screenshot(
-                    path=chart_screenshot_path,
-                    clip=clip_params
-                )
-                
-                # Verify file was created
-                if os.path.exists(chart_screenshot_path):
-                    file_size = os.path.getsize(chart_screenshot_path)
-                    logger.info(f"📸 Chart screenshot saved: {chart_screenshot_path} ({file_size} bytes)")
-                    return chart_screenshot_path
-                else:
-                    logger.warning(f"⚠️  Screenshot file was not created: {chart_screenshot_path}")
-                    return None
-                
-            except Exception as screenshot_error:
-                logger.warning(f"⚠️  Failed to capture chart screenshot with clipping: {screenshot_error}")
-                
-                # Fallback: scroll to chart and take screenshot
-                try:
-                    logger.info(f"🔄 Attempting fallback screenshot for {chart.get('chart_title', 'unknown')}")
-                    
-                    # Scroll to chart position
-                    await self.page.evaluate(f"window.scrollTo({x}, {y})")
-                    await asyncio.sleep(1)
-                    
-                    # Take screenshot without clipping (full viewport)
-                    fallback_screenshot = f"chart_{clean_title}_{clean_chart_title}_{timestamp}_fallback.png"
-                    fallback_path = os.path.join(self.screenshots_dir, fallback_screenshot)
-                    
-                    await self.page.screenshot(path=fallback_path)
-                    
-                    # Verify fallback file was created
-                    if os.path.exists(fallback_path):
-                        file_size = os.path.getsize(fallback_path)
-                        logger.info(f"📸 Fallback chart screenshot saved: {fallback_path} ({file_size} bytes)")
-                        return fallback_path
-                    else:
-                        logger.warning(f"⚠️  Fallback screenshot file was not created: {fallback_path}")
-                        return None
-                    
-                except Exception as fallback_error:
-                    logger.error(f"❌ Fallback screenshot also failed: {fallback_error}")
-                    return None
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to capture chart screenshot (fallback): {e}")
-            return None
     
     def _clean_filename(self, filename):
         """Clean filename for safe file system usage"""
@@ -1696,34 +1472,35 @@ class SupersetAutomation:
         
         return False
     
-    async def _wait_for_dashboard_load(self, dashboard_title, max_wait_time=30):
-        """Wait for dashboard to load with proper error checking"""
+    async def _wait_for_dashboard_load(self, dashboard_title, max_wait_time=10):
+        """Wait for dashboard to load with minimal error checking"""
         try:
             logger.info(f"⏳ Waiting for dashboard '{dashboard_title}' to load...")
             
             # Wait for initial page load
-            await self.page.wait_for_load_state('networkidle')
-            await asyncio.sleep(2)  # Additional wait for dynamic content
+            await self.page.wait_for_load_state('domcontentloaded')
+            await asyncio.sleep(1)  # Minimal wait for dynamic content
             
-            # Check page status
+            # Only check for critical errors - be more lenient
             status_ok = await self._check_dashboard_page_status(dashboard_title)
             
             if not status_ok:
                 logger.error("❌ Dashboard page shows error or failed to load properly")
                 return False
             
-            # Wait for dashboard content specifically
+            # Just check if page has basic content - no specific selectors
             try:
-                await self.page.wait_for_selector(
-                    '[data-test="chart-container"], .chart-container, .visualization-container, .ant-card, .dashboard-grid', 
-                    timeout=max_wait_time * 1000
-                )
-                logger.info("✅ Dashboard content loaded successfully")
-                return True
+                # Get page title to verify we're on a dashboard
+                page_title = await self.page.title()
+                if dashboard_title.lower() in page_title.lower() or 'dashboard' in page_title.lower():
+                    logger.info("✅ Dashboard page loaded successfully")
+                    return True
+                else:
+                    logger.warning(f"⚠️ Page title '{page_title}' doesn't match expected dashboard")
+                    # Still consider it loaded if no critical errors
+                    return status_ok
             except:
-                logger.warning("⚠️ Dashboard content elements not found within timeout")
-                # Double-check if it's really an error
-                status_ok = await self._check_dashboard_page_status(dashboard_title)
+                logger.warning("⚠️ Could not verify page title, but assuming loaded")
                 return status_ok
             
         except Exception as e:
@@ -1971,19 +1748,43 @@ class SupersetAutomation:
             logger.error(f"❌ Error selecting 'Download as Image': {e}")
             return False
     
-    async def _handle_download_dialog(self, filename):
+    async def _handle_download_dialog(self, filename, dashboard=None, context_callback=None):
         """Handle download dialog and save file with improved download handling"""
         try:
             # Set up download path
             download_path = os.path.join(self.screenshots_dir, filename)
+            logger.info(f"📁 Preparing download path: {download_path}")
+            
+            # Ensure screenshots directory exists
+            os.makedirs(self.screenshots_dir, exist_ok=True)
+            logger.info(f"📂 Screenshots directory confirmed: {self.screenshots_dir}")
+            
+            # Check if file already exists
+            if os.path.exists(download_path):
+                logger.info(f"🔄 File already exists, will overwrite: {download_path}")
             
             # Method 1: Use expect_download with better timeout handling
             try:
                 logger.info("🎯 Waiting for download event...")
                 async with self.page.expect_download(timeout=150000) as download_info:  # Extended to 2.5 minutes
                     download = await download_info.value
+                    logger.info(f"📥 Download started: {download.suggested_filename}")
                     await download.save_as(download_path)
-                    logger.info(f"✅ File downloaded successfully: {download_path} ({download.suggested_filename})")
+                    logger.info(f"✅ File downloaded successfully: {download_path}")
+                    logger.info(f"📊 File size: {os.path.getsize(download_path)} bytes")
+                    
+                    # Trigger context analysis callback if provided
+                    if context_callback and dashboard:
+                        try:
+                            await context_callback({
+                                'dashboard_id': dashboard.get('id'),
+                                'dashboard_title': dashboard.get('title'),
+                                'screenshot_path': download_path,
+                                'success': True
+                            })
+                        except Exception as callback_error:
+                            logger.warning(f"⚠️ Context callback failed: {callback_error}")
+                    
                     return download_path
             except asyncio.TimeoutError:
                 logger.warning("⚠️ Download timeout, trying alternative methods...")
@@ -1997,6 +1798,19 @@ class SupersetAutomation:
                     download = downloads[-1]  # Get the most recent download
                     await download.save_as(download_path)
                     logger.info(f"✅ File downloaded via existing downloads: {download_path}")
+                    
+                    # Trigger context analysis callback if provided
+                    if context_callback and dashboard:
+                        try:
+                            await context_callback({
+                                'dashboard_id': dashboard.get('id'),
+                                'dashboard_title': dashboard.get('title'),
+                                'screenshot_path': download_path,
+                                'success': True
+                            })
+                        except Exception as callback_error:
+                            logger.warning(f"⚠️ Context callback failed: {callback_error}")
+                    
                     return download_path
             except Exception as e:
                 logger.warning(f"⚠️ Existing downloads check failed: {e}")
@@ -2011,6 +1825,19 @@ class SupersetAutomation:
                     if current_time - file_mtime < 120:  # File created in last 2 minutes
                         file_size = os.path.getsize(download_path)
                         logger.info(f"✅ File already existed: {download_path} ({file_size} bytes)")
+                        
+                        # Trigger context analysis callback if provided
+                        if context_callback and dashboard:
+                            try:
+                                await context_callback({
+                                    'dashboard_id': dashboard.get('id'),
+                                    'dashboard_title': dashboard.get('title'),
+                                    'screenshot_path': download_path,
+                                    'success': True
+                                })
+                            except Exception as callback_error:
+                                logger.warning(f"⚠️ Context callback failed: {callback_error}")
+                        
                         return download_path
             except Exception as e:
                 logger.warning(f"⚠️ File existence check failed: {e}")
@@ -2045,6 +1872,19 @@ class SupersetAutomation:
                     
                     file_size = os.path.getsize(download_path)
                     logger.info(f"✅ Found and renamed recent download: {download_path} ({file_size} bytes)")
+                    
+                    # Trigger context analysis callback if provided
+                    if context_callback and dashboard:
+                        try:
+                            await context_callback({
+                                'dashboard_id': dashboard.get('id'),
+                                'dashboard_title': dashboard.get('title'),
+                                'screenshot_path': download_path,
+                                'success': True
+                            })
+                        except Exception as callback_error:
+                            logger.warning(f"⚠️ Context callback failed: {callback_error}")
+                    
                     return download_path
                     
             except Exception as e:
@@ -2093,83 +1933,10 @@ class SupersetAutomation:
                 'dashboard_id': 1,
                 'dashboard_title': 'World Bank\'s Data',
                 'dashboard_screenshot': 'mock_world_banks_data_full.png',
-                'charts': [
-                    {
-                        'chart_id': 'world_bank_chart_1',
-                        'chart_title': 'Global Health Metrics',
-                        'chart_screenshot': 'mock_world_bank_chart_1.png',
-                        'chart_data': self._create_mock_chart_data('World Bank\'s Data'),
-                        'chart_position': {'x': 50, 'y': 100, 'width': 600, 'height': 400},
-                        'processing_time': timestamp
-                    }
-                ],
-                'total_charts': 1,
                 'timestamp': timestamp
             }
         ]
     
-    def _create_mock_chart_data(self, dashboard_title):
-        """Create mock chart data based on dashboard title"""
-        title_lower = dashboard_title.lower()
-        
-        if 'world bank' in title_lower or 'health' in title_lower:
-            return {
-                'data': {
-                    'type': 'world_bank_data',
-                    'countries': ['USA', 'China', 'India', 'Brazil', 'UK'],
-                    'metrics': ['GDP Growth', 'Life Expectancy', 'Population'],
-                    'period': '2010-2023',
-                    'total_records': 150
-                },
-                'title': 'World Bank Health Data',
-                'type': 'mock_world_bank_data'
-            }
-        elif 'sales' in title_lower:
-            return {
-                'data': {
-                    'growth_rate': 15.3,
-                    'monthly_data': [
-                        {'month': 'Jan', 'sales': 98000},
-                        {'month': 'Feb', 'sales': 102000},
-                        {'month': 'Mar', 'sales': 115000},
-                        {'month': 'Apr', 'sales': 108000},
-                        {'month': 'May', 'sales': 125000},
-                        {'month': 'Jun', 'sales': 132000}
-                    ],
-                    'period': '2024-01 to 2024-06',
-                    'total_sales': 680000
-                },
-                'title': 'Sales Performance Data',
-                'type': 'mock_sales_data'
-            }
-        elif 'financial' in title_lower:
-            return {
-                'data': {
-                    'revenue': 2500000,
-                    'expenses': 1800000,
-                    'profit': 700000,
-                    'profit_margin': 28.0,
-                    'quarterly_data': [
-                        {'quarter': 'Q1', 'revenue': 600000, 'profit': 150000},
-                        {'quarter': 'Q2', 'revenue': 650000, 'profit': 180000},
-                        {'quarter': 'Q3', 'revenue': 620000, 'profit': 170000},
-                        {'quarter': 'Q4', 'revenue': 630000, 'profit': 200000}
-                    ]
-                },
-                'title': 'Financial Performance Data',
-                'type': 'mock_financial_data'
-            }
-        else:
-            return {
-                'data': {
-                    'value': 1000,
-                    'trend': 'increasing',
-                    'period': '2024',
-                    'records': 50
-                },
-                'title': 'General Data',
-                'type': 'mock_general_data'
-            }
 
 # Example usage and testing
 async def test_superset_connection():

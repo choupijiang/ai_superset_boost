@@ -1,7 +1,6 @@
 import os
 import json
 import base64
-import requests
 import logging
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
@@ -29,212 +28,396 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def clean_ai_response(text: str) -> str:
+    """Clean AI response by removing HTML tags, CSS styles, and other unwanted formatting"""
+    if not text:
+        return text
+    
+    import re
+    
+    # Step 1: Remove CSS style blocks and attributes completely
+    # Remove style="..." attributes
+    text = re.sub(r'style\s*=\s*"[^"]*"', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'style\s*=\s*\'[^\']*\'', '', text, flags=re.IGNORECASE)
+    
+    # Step 2: Remove CSS properties patterns that appear without style attributes
+    css_patterns = [
+        r'color\s*:\s*[^;]+;?',
+        r'margin\s*:\s*[^;]+;?',
+        r'padding\s*:\s*[^;]+;?',
+        r'font-size\s*:\s*[^;]+;?',
+        r'font-weight\s*:\s*[^;]+;?',
+        r'background\s*:\s*[^;]+;?',
+        r'border\s*:\s*[^;]+;?',
+        r'text-align\s*:\s*[^;]+;?',
+        r'line-height\s*:\s*[^;]+;?',
+        r'font-family\s*:\s*[^;]+;?',
+        r'display\s*:\s*[^;]+;?',
+        r'width\s*:\s*[^;]+;?',
+        r'height\s*:\s*[^;]+;?',
+        r'list-style-type\s*:\s*[^;]+;?',
+    ]
+    
+    for pattern in css_patterns:
+        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+    
+    # Step 3: Remove HTML tags completely
+    text = re.sub(r'<[^>]*>', '', text)
+    
+    # Step 4: Remove any remaining HTML attributes
+    text = re.sub(r'\w+\s*=\s*"[^"]*"', '', text)
+    text = re.sub(r'\w+\s*=\s*\'[^\']*\'', '', text)
+    
+    # Step 5: Remove orphaned CSS values that might be left
+    text = re.sub(r'#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}', '', text)  # Remove hex colors
+    text = re.sub(r'\b\d+px\b', '', text)  # Remove pixel values
+    text = re.sub(r'\b\d+em\b', '', text)  # Remove em values
+    text = re.sub(r'\b\d+%\b', '', text)   # Remove percentage values
+    
+    # Step 6: Remove orphaned quotes and special characters
+    text = re.sub(r'^["\'>\s]+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'["\'>\s]+$', '', text, flags=re.MULTILINE)
+    
+    # Step 7: Clean up multiple quotes and special characters
+    text = re.sub(r'["\']{2,}', '', text)
+    text = re.sub(r'["\'>]', '', text)
+    
+    # Step 8: Split by lines and clean each line
+    lines = text.split('\n')
+    cleaned_lines = []
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Remove any remaining CSS-like patterns more aggressively
+        line = re.sub(r'\b\w+\s*:\s*[^;]*;?', '', line, flags=re.IGNORECASE)
+        
+        # Remove orphaned CSS property names and values
+        line = re.sub(r'\b(border|padding|margin|color|font|background|width|height|display|text-align|line-height|font-weight|font-size)\s*[-\w]*', '', line, flags=re.IGNORECASE)
+        
+        # Clean up spacing
+        line = re.sub(r'\s+', ' ', line)
+        line = line.replace(' .', '.').replace(' ,', ',').replace(' ;', ';')
+        
+        if line.strip():
+            cleaned_lines.append(line.strip())
+    
+    # Step 9: Join cleaned lines and ensure proper markdown formatting
+    text = '\n\n'.join(cleaned_lines)
+    
+    # Step 10: Final cleanup - remove any lines that are just CSS properties or orphaned CSS parts
+    lines = text.split('\n')
+    final_lines = []
+    for line in lines:
+        line = line.strip()
+        # Skip lines that look like CSS properties or contain only CSS-related words
+        if not re.match(r'^[a-zA-Z-]+\s*:\s*.*;?$', line) and not re.match(r'^\s*(border|padding|margin|color|font|background)\s*[-\w]*\s*$', line, flags=re.IGNORECASE):
+            final_lines.append(line)
+    
+    text = '\n'.join(final_lines)
+    
+    return text.strip()
+
 class AIAnalyzer:
     def __init__(self):
-        # Initialize AI provider using OpenAI client with BigModel.cn
         self.openai_api_key = os.environ.get('OPENAI_API_KEY')
         self.openai_api_base = os.environ.get('OPENAI_API_BASE')
-        self.openai_model = os.environ.get('OPENAI_MODEL', 'glm-4v-plus')  # Use vision model by default
+        self.openai_model = os.environ.get('OPENAI_MODEL', 'glm-4v-plus')
         
-        if self.openai_api_key and OPENAI_AVAILABLE:
-            self.ai_provider = 'openai'
-            self.client = OpenAI(
-                api_key=self.openai_api_key,
-                base_url=self.openai_api_base
-            )
-            logger.info(f"✅ Using OpenAI client with BigModel.cn - Model: {self.openai_model}")
-        else:
-            # Fallback to mock mode
-            self.ai_provider = 'mock'
-            logger.warning("⚠️  No AI API keys available, using mock mode")
+        if not self.openai_api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is required")
         
-        logger.info(f"🤖 AI Analyzer initialized with provider: {self.ai_provider}")
+        if not OPENAI_AVAILABLE:
+            raise ImportError("OpenAI library is required but not available")
+        
+        self.client = OpenAI(
+            api_key=self.openai_api_key,
+            base_url=self.openai_api_base
+        )
+        logger.info(f"✅ Using GLM-4.5 with BigModel.cn - Model: {self.openai_model}")
     
     def encode_image(self, image_path: str) -> Optional[str]:
-        """Encode image to base64"""
+        """Encode image to base64 with proper data URL format for BigModel.cn"""
         try:
             with open(image_path, "rb") as image_file:
-                return base64.b64encode(image_file.read()).decode('utf-8')
+                image_data = image_file.read()
+                base64_data = base64.b64encode(image_data).decode('utf-8')
+                
+                # Determine image type from file extension
+                import mimetypes
+                mime_type, _ = mimetypes.guess_type(image_path)
+                if not mime_type:
+                    mime_type = 'image/png'
+                
+                # Format as data URL: data:image/png;base64,<base64_data>
+                data_url = f"data:{mime_type};base64,{base64_data}"
+                return data_url
         except Exception as e:
             logger.error(f"Error encoding image {image_path}: {e}")
             return None
     
-    def analyze_multimodal(self, 
-                         question: str, 
-                         screenshots: Optional[List[Dict[str, Any]]] = None,
-                         json_data: Optional[Union[Dict, List]] = None) -> str:
+    def _call_ai_api(self, messages: List[Dict], model: str = None, max_tokens: int = 2000, timeout: float = 30.0) -> str:
+        """Generic AI API call method"""
+        try:
+            # Configure timeout and retry settings
+            response = self.client.chat.completions.create(
+                model=model or self.openai_model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=0.3,
+                timeout=timeout  # Configurable timeout
+            )
+            content = response.choices[0].message.content
+            if not content or content.strip() == "":
+                logger.warning("⚠️ AI API returned empty content")
+                logger.warning(f"⚠️ Response details: {response}")
+                logger.warning(f"⚠️ Model used: {model or self.openai_model}")
+                logger.warning(f"⚠️ Max tokens: {max_tokens}")
+                return "AI API返回空内容，可能是网络问题或API限制"
+            return content
+        except Exception as e:
+            error_msg = f"AI API调用失败: {str(e)}"
+            logger.error(error_msg)
+            # Check if it's a connection error and provide more helpful message
+            if "Connection error" in str(e) or "timeout" in str(e).lower():
+                logger.warning("⚠️ 网络连接问题，请检查网络连接或稍后重试")
+            return error_msg
+    
+    def analyze_dashboard_progressively(self, question: str, dashboard_data: Dict[str, Any], progress_callback=None) -> str:
         """
-        Multimodal analysis supporting images, JSON data, or both
+        Analyze a single dashboard progressively with simplified approach
         
         Args:
             question: Business question to analyze
-            screenshots: List of screenshot dictionaries with 'path' and 'title' keys
-            json_data: JSON data for analysis
+            dashboard_data: Dictionary containing dashboard information and screenshots
+            progress_callback: Optional callback function to send progress updates
         """
         try:
-            logger.info(f"🤖 Starting multimodal analysis: {question}")
+            dashboard_title = dashboard_data.get('dashboard_title', 'Unknown')
+            logger.info(f"🤖 Analyzing dashboard: {dashboard_title}")
             
-            if self.ai_provider == 'openai':
-                return self._analyze_with_glm45_multimodal(question, screenshots, json_data)
-            else:
-                return self._analyze_with_mock(question, screenshots, json_data)
-                
+            # Send start event if callback provided
+            if progress_callback:
+                progress_callback({
+                    'type': 'analysis_started',
+                    'dashboard_title': dashboard_title,
+                    'message': '开始分析看板数据'
+                })
+            
+            # Get dashboard screenshot
+            dashboard_screenshot = dashboard_data.get('dashboard_screenshot')
+            if not dashboard_screenshot:
+                return f"看板 {dashboard_title} 没有可用的截图"
+            
+            # Construct full path if needed
+            if not os.path.isabs(dashboard_screenshot):
+                # Convert from relative URL path to filesystem path
+                if dashboard_screenshot.startswith('screenshots/'):
+                    dashboard_screenshot = os.path.join(os.path.dirname(__file__), dashboard_screenshot)
+                else:
+                    dashboard_screenshot = os.path.join('screenshots', dashboard_screenshot)
+            
+            if not os.path.exists(dashboard_screenshot):
+                return f"看板截图文件不存在: {dashboard_screenshot}"
+            
+            # Encode image
+            image_base64 = self.encode_image(dashboard_screenshot)
+            if not image_base64:
+                return f"图片编码失败: {dashboard_screenshot}"
+            
+            # Prepare content with just question and image
+            content = [
+                {"type": "text", "text": f"请分析这个看板截图，回答业务问题：{question}"},
+                {"type": "image_url", "image_url": {"url": image_base64}}
+            ]
+            
+            # Simple system message
+            system_message = """你是一位专业的商业数据分析师。请仔细分析看板截图，识别关键指标和趋势，回答用户的业务问题。
+
+极其严格的要求（必须严格遵守）：
+1. 请用中文回答，提供具体的洞察和建议
+2. 绝对禁止使用任何HTML标签、CSS样式、Markdown格式或其他格式化代码
+3. 只返回纯文本内容，严禁任何格式化
+4. 严禁返回任何包含以下内容的内容：
+   - 任何HTML标签（如 <div>, <span>, <p>, <h1> 等）
+   - 任何CSS样式（如 style="color: #2c3e50; margin: 20px 0 10px 0;"）
+   - 任何CSS属性（如 color: #2c3e50; margin: 20px 0 10px 0;）
+   - 任何颜色代码（如 #2c3e50, #667eea 等）
+   - 任何字体大小（如 1.3em, 14px 等）
+   - 任何边框或布局属性（如 border-left: 3px solid #667eea;）
+   - 任何JavaScript代码
+   - 任何编程代码或格式化标记
+   - 任何引号包含的样式信息
+   - 任何列表样式（如 list-style-type: disc;）
+
+5. 请严格按照以下纯文本格式回答，不要添加任何格式化：
+
+主要发现：
+[在这里描述从看板中观察到的主要数据和趋势，使用纯文本]
+
+关键洞察：
+[在这里提供2-3个最重要的业务洞察，使用纯文本]
+
+建议：
+[在这里基于数据提供具体的业务建议，使用纯文本]
+
+6. 如果违反以上任何要求，将会严重影响用户体验，请务必只返回纯文本内容。
+7. 不要添加任何颜色、字体、边框、间距等CSS相关的描述。
+8. 内容应该像纯文本文档一样简洁明了。"""
+            
+            # Call AI API
+            messages = [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": content}
+            ]
+            
+            result = self._call_ai_api(messages)
+            if result.startswith("AI API调用失败") or result.startswith("AI API返回空内容"):
+                return result
+            
+            # Log the original AI response for debugging
+            logger.info(f"🔍 Original AI response for {dashboard_title}:")
+            logger.info(f"--- BEGIN RAW AI RESPONSE ---")
+            logger.info(result)
+            logger.info(f"--- END RAW AI RESPONSE ---")
+            
+            # Clean the result to remove any HTML tags or unwanted formatting
+            cleaned_result = clean_ai_response(result)
+            
+            # Log the cleaned result for comparison
+            logger.info(f"🧹 Cleaned AI response for {dashboard_title}:")
+            logger.info(f"--- BEGIN CLEANED AI RESPONSE ---")
+            logger.info(cleaned_result)
+            logger.info(f"--- END CLEANED AI RESPONSE ---")
+            
+            result = cleaned_result
+            
+            logger.info(f"✅ Dashboard analysis completed: {dashboard_title}")
+            return result
+            
         except Exception as e:
-            logger.error(f"❌ Multimodal analysis failed: {e}")
-            return self._get_fallback_response(question)
+            logger.error(f"❌ Dashboard analysis failed: {e}")
+            return f"分析看板 {dashboard_data.get('dashboard_title', 'Unknown')} 时出现错误：{str(e)}"
     
-    def _analyze_with_glm45_multimodal(self, 
-                                     question: str, 
-                                     screenshots: Optional[List[Dict[str, Any]]] = None,
-                                     json_data: Optional[Union[Dict, List]] = None) -> str:
-        """Analyze using GLM-4.5 multimodal capabilities"""
+    def combine_multiple_analyses(self, question: str, individual_analyses: List[Dict[str, Any]]) -> str:
+        """
+        Combine multiple individual dashboard analyses into a comprehensive answer
+        
+        Args:
+            question: Original business question
+            individual_analyses: List of dictionaries containing dashboard analysis results
+        """
         try:
-            # Prepare multimodal content
-            content = [{"type": "text", "text": question}]
+            logger.info(f"🤖 Combining {len(individual_analyses)} analyses")
             
-            # Add screenshots if available
-            if screenshots:
-                screenshot_count = 0
-                for screenshot in screenshots[:5]:  # Limit to 5 screenshots
-                    if os.path.exists(screenshot['path']):
-                        image_base64 = self.encode_image(screenshot['path'])
-                        if image_base64:
-                            content.append({
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/png;base64,{image_base64}"
-                                }
-                            })
-                            screenshot_count += 1
-                logger.info(f"📸 Added {screenshot_count} screenshots for analysis")
+            # Prepare analysis summaries
+            analysis_summaries = []
+            for i, analysis in enumerate(individual_analyses):
+                dashboard_title = analysis.get('dashboard_title', f'看板{i+1}')
+                analysis_result = analysis.get('analysis', '无分析结果')
+                analysis_summaries.append(f"看板 {i+1}: {dashboard_title}\n分析结果: {analysis_result}")
             
-            # Add JSON data if available
-            if json_data:
-                json_text = f"\n\nJSON Data:\n```json\n{json.dumps(json_data, ensure_ascii=False, indent=2)}\n```"
-                content.append({"type": "text", "text": json_text})
-                logger.info("📊 Added JSON data for analysis")
+            combined_text = "\n\n".join(analysis_summaries)
             
-            # Build system message based on available data types
-            system_parts = ["你是一位专业的商业数据分析师，专注于数据可视化和仪表板分析。"]
-            
-            if screenshots and json_data:
-                system_parts.append("""
-你的任务是：
-1. 仔细分析提供的仪表板截图和JSON数据
-2. 识别关键指标、趋势和模式
-3. 结合可视化数据和结构化数据进行分析
-4. 回答用户的具体业务问题
-5. 提供可行的见解和建议
-6. 在分析中保持具体和数据驱动
+            # Simple prompt for combining analyses
+            prompt = f"""原始业务问题：{question}
 
-请用中文回答，专注于业务价值和实用洞察。""")
-            elif screenshots:
-                system_parts.append("""
-你的任务是：
-1. 仔细分析提供的仪表板截图
-2. 识别关键指标、趋势和模式
-3. 回答用户的具体业务问题
-4. 提供可行的见解和建议
-5. 在分析中保持具体和数据驱动
+各看板的独立分析结果：
+{combined_text}
 
-请用中文回答，专注于业务价值和实用洞察。""")
-            elif json_data:
-                system_parts.append("""
-你的任务是：
-1. 仔细分析提供的JSON数据
-2. 识别关键指标、趋势和模式
-3. 回答用户的具体业务问题
-4. 提供可行的见解和建议
-5. 在分析中保持具体和数据驱动
+请综合以上所有看板的分析结果，提供一个全面的回答。
 
-请用中文回答，专注于业务价值和实用洞察。""")
+极其严格的格式要求（必须严格遵守）：
+
+整体洞察：
+综合所有看板数据的关键发现
+
+关键趋势：
+识别最重要的趋势和模式
+
+跨看板关联：
+分析不同看板数据之间的关系
+
+综合建议：
+提供整体性的业务建议
+
+绝对严格禁止：
+- 严禁使用任何HTML标签（如 <div>, <span>, <p>, <h1> 等）
+- 严禁使用CSS样式（如 style="color: #2c3e50; margin: 20px 0 10px 0;"）
+- 严禁使用CSS属性（如 color: #2c3e50; margin: 20px 0 10px 0;）
+- 严禁使用颜色代码（如 #2c3e50, #667eea 等）
+- 严禁使用字体大小（如 1.3em, 14px 等）
+- 严禁使用边框或布局属性（如 border-left: 3px solid #667eea;）
+- 严禁使用列表样式（如 list-style-type: disc;）
+- 严禁使用Markdown格式
+- 严禁使用任何格式化代码或标记
+- 严禁使用任何引号包含的样式信息
+
+请只返回纯文本内容，使用清晰的段落和简单的标题。如果返回任何格式化代码将严重影响用户体验。
+内容应该像纯文本文档一样简洁明了，不要添加任何视觉样式的描述。"""
             
-            system_message = "\n".join(system_parts)
+            # Call AI API for summary
+            messages = [
+                {"role": "system", "content": "你是一位专业的商业数据分析师，擅长综合多源数据进行全面分析。请用中文回答，严禁使用任何HTML标签、CSS样式或格式化代码。"},
+                {"role": "user", "content": prompt}
+            ]
             
-            # Call GLM-4.5 API
-            response = self.client.chat.completions.create(
-                model=self.openai_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": system_message
-                    },
-                    {
-                        "role": "user",
-                        "content": content
-                    }
-                ],
-                max_tokens=3000,
-                temperature=0.3
-            )
+            result = self._call_ai_api(messages, model='glm-4-plus', max_tokens=3000)
+            if result.startswith("AI API调用失败") or result.startswith("AI API返回空内容"):
+                return result
             
-            answer = response.choices[0].message.content
-            logger.info(f"✅ GLM-4.5 multimodal analysis completed successfully")
-            return answer
+            # Log the original AI response for debugging
+            logger.info(f"🔍 Original combined AI response:")
+            logger.info(f"--- BEGIN RAW COMBINED AI RESPONSE ---")
+            logger.info(result)
+            logger.info(f"--- END RAW COMBINED AI RESPONSE ---")
+            
+            # Clean the result to remove any HTML tags or unwanted formatting
+            cleaned_result = clean_ai_response(result)
+            
+            # Log the cleaned result for comparison
+            logger.info(f"🧹 Cleaned combined AI response:")
+            logger.info(f"--- BEGIN CLEANED COMBINED AI RESPONSE ---")
+            logger.info(cleaned_result)
+            logger.info(f"--- END CLEANED COMBINED AI RESPONSE ---")
+            
+            result = cleaned_result
+            
+            logger.info(f"✅ Successfully combined {len(individual_analyses)} analyses")
+            return result
             
         except Exception as e:
-            logger.error(f"❌ GLM-4.5 multimodal analysis failed: {e}")
-            return self._get_fallback_response(question)
+            logger.error(f"❌ Failed to combine analyses: {e}")
+            return f"综合分析时出现错误：{str(e)}"
+    
+    # Legacy methods for backward compatibility
+    def analyze_multimodal(self, question: str, screenshots: Optional[List[Dict[str, Any]]] = None, json_data: Optional[Union[Dict, List]] = None) -> str:
+        """Legacy method - use simplified dashboard analysis instead"""
+        if screenshots:
+            # Convert to dashboard format and use new method
+            dashboard_data = {
+                'dashboard_title': 'Legacy Analysis',
+                'dashboard_screenshot': screenshots[0]['path']
+            }
+            return self.analyze_dashboard_progressively(question, dashboard_data)
+        return self._get_fallback_response(question)
     
     def analyze_with_screenshots(self, question: str, screenshots: List[Dict[str, Any]]) -> str:
-        """Legacy method for backward compatibility"""
+        """Legacy method"""
         return self.analyze_multimodal(question, screenshots=screenshots)
     
     def analyze_with_json(self, question: str, json_data: Union[Dict, List]) -> str:
-        """Analyze business question using JSON data"""
-        return self.analyze_multimodal(question, json_data=json_data)
+        """Legacy method"""
+        return self._get_fallback_response(question)
     
-    def _analyze_with_mock(self, 
-                          question: str, 
-                          screenshots: Optional[List[Dict[str, Any]]] = None,
-                          json_data: Optional[Union[Dict, List]] = None) -> str:
-        """Mock analysis for testing purposes"""
-        logger.info("🤖 Using mock analysis mode")
-        
-        # Determine what type of analysis to simulate
-        has_screenshots = screenshots and len(screenshots) > 0
-        has_json = json_data is not None
-        
-        if has_screenshots and has_json:
-            analysis_type = "仪表板截图和JSON数据"
-        elif has_screenshots:
-            analysis_type = "仪表板截图"
-        elif has_json:
-            analysis_type = "JSON数据"
-        else:
-            analysis_type = "业务问题"
-        
-        mock_response = f"""
-基于提供的{analysis_type}，我对您的业务问题"{question}"进行分析：
-
-## 关键发现：
-1. **数据质量**: {analysis_type}显示了完整的数据信息
-2. **业务指标**: 包含了关键的性能指标
-3. **趋势分析**: 可以识别出明显的业务趋势
-4. **数据关联**: 不同数据源之间显示出一致性
-
-## 建议行动：
-1. **深入分析**: 建议进一步分析具体数据点
-2. **监控指标**: 持续监控关键业务指标
-3. **数据驱动决策**: 基于数据制定业务策略
-4. **定期回顾**: 建立定期的数据分析机制
-
-## 注意事项：
-- 这是基于{analysis_type}的初步分析
-- 建议结合具体业务上下文进行解读
-- 定期更新数据分析以反映最新情况
-
-*注：这是模拟分析结果，实际使用时请配置真实的 AI API 密钥。*
-"""
-        return mock_response
+    def analyze_text_only(self, question: str, dashboard_titles: List[str]) -> str:
+        """Legacy method"""
+        return self._get_fallback_response(question)
     
     def _get_fallback_response(self, question: str) -> str:
         """Get fallback response when AI analysis fails"""
-        provider_map = {
-            'openai': 'GLM-4.5 (BigModel.cn)',
-            'mock': 'Mock Mode'
-        }
-        
         return f"""
 抱歉，AI 分析暂时无法完成。对于您的业务问题"{question}"，建议您：
 
@@ -242,173 +425,6 @@ class AIAnalyzer:
 2. 联系技术支持检查 AI 服务配置
 3. 稍后重试分析
 
-当前使用的 AI 提供商: {provider_map.get(self.ai_provider, self.ai_provider)}
+当前使用的 AI 提供商: GLM-4.5 (BigModel.cn)
 请检查 API 密钥配置和网络连接。
 """
-    
-    def analyze_text_only(self, question: str, dashboard_titles: List[str]) -> str:
-        """Analyze business question using text-only AI"""
-        
-        try:
-            # Format dashboard titles
-            formatted_titles = chr(10).join([f"- {title}" for title in dashboard_titles])
-            
-            # Create the prompt
-            prompt = f"""你是一个专业的商业数据分析师。虽然无法直接看到数据，但基于看板标题和常见的业务分析模式，请提供有价值的业务建议。
-
-请用中文回答，保持专业但易懂的语气。
-
-业务问题：{question}
-
-可用的看板（但无法直接看到数据）：
-{formatted_titles}
-
-虽然无法直接看到数据，但请基于这些看板标题和你的专业知识：
-1. 分析这个问题可能需要哪些类型的数据
-2. 提供一般性的业务分析框架
-3. 建议应该关注哪些关键指标
-4. 给出基于常见业务模式的建议"""
-            
-            if self.ai_provider == 'openai':
-                return self._analyze_text_with_glm45(prompt)
-            else:
-                return self._fallback_text_analysis(question, dashboard_titles)
-            
-        except Exception as e:
-            logger.error(f"Text analysis error: {str(e)}")
-            return self._fallback_text_analysis(question, dashboard_titles)
-    
-    def _analyze_text_with_glm45(self, prompt: str) -> str:
-        """Analyze text using GLM-4.5 via OpenAI client"""
-        try:
-            response = self.client.chat.completions.create(
-                model='glm-4-plus',  # Use text model for text-only analysis
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "你是一个专业的商业数据分析师。请用中文回答，保持专业但易懂的语气。"
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                max_tokens=2000,
-                temperature=0.3
-            )
-            
-            return response.choices[0].message.content
-                
-        except Exception as e:
-            logger.error(f"❌ GLM-4.5 text analysis failed: {e}")
-            return f"GLM-4.5分析过程中出现错误：{str(e)}"
-    
-    def _fallback_text_analysis(self, question: str, dashboard_titles: List[str]) -> str:
-        """Fallback method using direct API calls"""
-        # For mock mode, return a simple template response
-        return f"""
-对于业务问题"{question}"，基于 {len(dashboard_titles)} 个可用看板的分析：
-
-## 分析框架：
-1. **数据需求分析**: 需要查看相关的业务指标数据
-2. **趋势识别**: 分析时间序列数据和变化模式
-3. **关联分析**: 找出不同指标间的相关关系
-4. **建议制定**: 基于数据洞察提供行动建议
-
-## 建议关注的关键指标：
-- 核心业务指标（KPI）
-- 趋势变化率
-- 同环比分析
-- 异常数据点
-
-## 下一步行动：
-- 查看具体看板数据
-- 结合业务背景解读
-- 制定数据驱动策略
-
-*注：这是基于看板标题的通用分析建议，具体分析需要查看实际数据。*
-"""
-    
-    def get_business_insights_template(self, question: str, dashboard_count: int) -> str:
-        """Get a template response when AI is not available"""
-        
-        templates = {
-            "销售": f"""
-基于 {dashboard_count} 个看板的分析，关于销售趋势的分析结果：
-
-📊 **主要发现：**
-- 需要查看销售看板中的具体数据趋势
-- 建议关注月度/季度销售增长率
-- 分析不同产品线的表现差异
-
-💡 **建议：**
-1. 深入分析销售数据的时间序列趋势
-2. 识别销售高峰和低谷的原因
-3. 对比不同渠道的销售效果
-
-⚠️ **注意：** 具体数值需要查看实际看板数据
-""",
-            
-            "用户": f"""
-基于 {dashboard_count} 个看板的分析，关于用户活跃度的分析结果：
-
-👥 **用户行为分析：**
-- 建议查看用户活跃度看板中的DAU/MAU指标
-- 分析用户留存率和流失率趋势
-- 关注用户参与度的变化
-
-📈 **关键指标：**
-- 日活跃用户数(DAU)
-- 月活跃用户数(MAU) 
-- 用户留存率
-- 平均使用时长
-
-🔍 **建议：** 需要结合具体数据制定用户增长策略
-""",
-            
-            "财务": f"""
-基于 {dashboard_count} 个看板的分析，关于财务分析的结果：
-
-💰 **财务状况分析：**
-- 建议查看财务看板中的收入、成本、利润数据
-- 分析各项财务指标的趋势变化
-- 关注预算执行情况和成本控制
-
-📊 **重点关注：**
-- 收入增长率
-- 成本结构变化
-- 利润率趋势
-- 现金流状况
-
-💡 **建议：** 需要基于具体财务数据制定优化策略
-""",
-            
-            "default": f"""
-基于 {dashboard_count} 个看板的分析，关于"{question}"的分析结果：
-
-🔍 **分析框架：**
-1. **数据收集：** 从相关看板中提取关键指标
-2. **趋势分析：** 识别数据中的模式和变化
-3. **关联分析：** 找出不同指标间的关联关系
-4. **建议制定：** 基于数据洞察提出行动建议
-
-📋 **下一步：**
-- 需要查看具体看板数据以获得准确分析
-- 建议关注与问题最相关的关键指标
-- 结合业务背景进行深度解读
-
-⚠️ **说明：** 具体分析结果需要基于实际看板数据
-"""
-        }
-        
-        # Determine which template to use based on question keywords
-        question_lower = question.lower()
-        
-        if any(keyword in question_lower for keyword in ['销售', '收入', 'revenue', 'sales']):
-            return templates["销售"]
-        elif any(keyword in question_lower for keyword in ['用户', '活跃', 'user', 'active']):
-            return templates["用户"]
-        elif any(keyword in question_lower for keyword in ['财务', '成本', '利润', 'financial', 'cost']):
-            return templates["财务"]
-        else:
-            return templates["default"]
