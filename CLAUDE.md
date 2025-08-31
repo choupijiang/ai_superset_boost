@@ -104,13 +104,34 @@ SECRET_KEY=your-secret-key-here-change-in-production
 OPENAI_API_KEY=your-bigmodel-api-key-here
 OPENAI_API_BASE=https://api.bigmodel.cn/api/paas/v4
 OPENAI_MODEL=glm-4v-plus
+
+# Superset Automation Configuration
+SUPERSET_TIMEOUT=120000  # Dashboard loading timeout in milliseconds (default: 120000ms = 120 seconds)
 ```
 
+### Timeout Configuration
+
+The system includes configurable timeouts for handling different scenarios:
+
+- **SUPERSET_TIMEOUT**: Controls dashboard loading timeout in milliseconds
+  - Default: 120 seconds (120000ms)
+  - Recommended: 120 seconds (120000ms) for complex dashboards
+  - Minimum: 30 seconds (30000ms) for simple dashboards
+
+**Common Timeout Issues:**
+- Complex dashboards with large datasets may require longer timeouts
+- Network latency can affect dashboard loading times
+- Superset server performance impacts response times
+
+**Troubleshooting Timeouts:**
+1. Increase `SUPERSET_TIMEOUT` in `.env` file
+2. Check network connectivity to Superset server
+3. Verify Superset server performance
+4. Consider optimizing complex dashboards
+
 ### Directory Structure
-- `screenshots/` - Stores captured dashboard and chart screenshots
-- `dashboard_data/` - Cached dashboard metadata and information
-- `templates/` - HTML templates for the web interface
-- `logs/` - Application log files
+- `screenshots/` - Stores captured dashboard and chart screenshots 
+- `templates/` - HTML templates for the web interface 
 
 ## Testing Strategy
 

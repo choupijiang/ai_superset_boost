@@ -25,6 +25,58 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 全局变量存储智能上下文系统
+smart_context_system = None
+
+def initialize_system():
+    """初始化系统组件，包括FAISS索引"""
+    global smart_context_system
+    
+    try:
+        logger.info("🚀 初始化智能商业分析系统...")
+        
+        # 初始化AI分析器
+        ai_analyzer = AIAnalyzer()
+        
+        # 初始化智能上下文系统
+        smart_context_system = SmartContextSystem(ai_analyzer, use_faiss=True)
+        
+        # 检查FAISS索引状态
+        if smart_context_system.use_faiss and smart_context_system.faiss_index_manager:
+            logger.info("🔍 检查FAISS索引状态...")
+            
+            # 尝试加载现有索引
+            if not smart_context_system.faiss_index_manager.load_existing_index():
+                logger.info("📝 未找到现有FAISS索引，开始构建新索引...")
+                
+                # 从context下的markdown文件构建FAISS索引
+                if smart_context_system.faiss_index_manager.build_index_from_contexts():
+                    logger.info("✅ FAISS索引构建成功")
+                else:
+                    logger.warning("⚠️ FAISS索引构建失败，将使用AI选择作为备选")
+            else:
+                logger.info("✅ FAISS索引加载成功")
+        
+        logger.info("🎉 系统初始化完成")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ 系统初始化失败: {e}")
+        return False
+
+def initialize_system_on_first_request():
+    """在第一个请求之前初始化系统"""
+    if not hasattr(app, '_system_initialized'):
+        logger.info("📱 收到第一个请求，初始化系统...")
+        initialize_system()
+        app._system_initialized = True
+
+# 在主请求处理中调用初始化
+@app.before_request
+def before_request():
+    """在每个请求之前检查系统初始化状态"""
+    initialize_system_on_first_request()
+
 def get_screenshot_url(screenshot_path):
     """Convert full file path to relative URL path for web access"""
     if not screenshot_path:
@@ -47,9 +99,21 @@ def index():
 def context_status():
     """Get context system status"""
     try:
-        ai_analyzer = AIAnalyzer()
-        smart_context = SmartContextSystem(ai_analyzer)
-        status = smart_context.get_system_status()
+        # 使用全局的smart_context_system
+        global smart_context_system
+        
+        if smart_context_system is None:
+            logger.warning("⚠️ 智能上下文系统未初始化，正在初始化...")
+            initialize_system()
+        
+        if smart_context_system is None:
+            return jsonify({
+                "error": "智能上下文系统初始化失败",
+                "faiss_enabled": False,
+                "selection_method": "未初始化"
+            }), 500
+        
+        status = smart_context_system.get_system_status()
         
         # Add additional helpful information
         contexts = smart_context.context_manager.get_all_contexts()
@@ -83,9 +147,21 @@ def context_refresh():
     try:
         logger.info("🔄 手动刷新Context系统...")
         
-        # Initialize context system
-        ai_analyzer = AIAnalyzer()
-        smart_context = SmartContextSystem(ai_analyzer)
+        # 使用全局的smart_context_system
+        global smart_context_system
+        
+        if smart_context_system is None:
+            logger.warning("⚠️ 智能上下文系统未初始化，正在初始化...")
+            initialize_system()
+        
+        if smart_context_system is None:
+            return jsonify({
+                'success': False,
+                'error': '智能上下文系统初始化失败',
+                'timestamp': datetime.now().isoformat()
+            }), 500
+        
+        smart_context = smart_context_system
         
         # Get available dashboards and update contexts
         async def refresh_contexts():
@@ -160,6 +236,18 @@ def context_refresh():
             loop.close()
         
         logger.info("✅ Context系统刷新完成")
+        
+        # 强制重建FAISS索引
+        if smart_context.use_faiss and smart_context.faiss_index_manager:
+            logger.info("🔄 重建FAISS索引...")
+            try:
+                if smart_context.faiss_index_manager.force_rebuild():
+                    logger.info("✅ FAISS索引重建成功")
+                else:
+                    logger.warning("⚠️ FAISS索引重建失败")
+            except Exception as e:
+                logger.error(f"❌ FAISS索引重建错误: {e}")
+        
         return jsonify({
             'success': True,
             'message': 'Context system refreshed successfully',
@@ -187,9 +275,30 @@ def run_async_analysis(question):
 
 async def analyze_question_async(question):
     """Async analysis function with smart context system - optimized version"""
+    # 使用全局的smart_context_system
+    global smart_context_system
+    
+    if smart_context_system is None:
+        logger.warning("⚠️ 智能上下文系统未初始化，正在重新初始化...")
+        initialize_system()
+        if smart_context_system is None:
+            logger.error("❌ 智能上下文系统初始化失败")
+            return {
+                'question': question,
+                'answer': '系统初始化失败，请稍后重试。',
+                'timestamp': datetime.now().isoformat(),
+                'analysis_type': 'system_error',
+                'dashboards_analyzed': 0,
+                'total_charts': 0,
+                'dashboards_data': [],
+                'individual_analyses': [],
+                'screenshots': []
+            }
+    
+    smart_context = smart_context_system
+    ai_analyzer = smart_context.dashboard_analyzer.ai_analyzer
+    
     async with SupersetAutomation() as superset_automation:
-        ai_analyzer = AIAnalyzer()
-        smart_context = SmartContextSystem(ai_analyzer)
         
         try:
             logger.info(f"🔍 开始智能分析: {question[:100]}...")
@@ -242,8 +351,13 @@ async def analyze_question_async(question):
                 expired_count = len(update_results.get('expired_dashboards', []))
                 logger.info(f"📊 Context更新: 新增{updated_count}个, 过期{expired_count}个")
             
-            # Step 4: Select most relevant dashboards using AI
+            # Step 4: Select most relevant dashboards using FAISS or AI
             logger.info("🎯 智能选择相关Dashboards...")
+            if smart_context.use_faiss and smart_context.faiss_index_manager:
+                logger.info("🔍 使用FAISS向量搜索进行Dashboard选择...")
+            else:
+                logger.info("🤖 使用AI进行Dashboard选择...")
+            
             selected_dashboards = smart_context.select_dashboards_for_question(question, top_k=3)
             
             if not selected_dashboards:
@@ -1174,14 +1288,35 @@ def initialize_context_system():
                             logger.info(f"⏳ 等待3秒后处理下一个...")
                             await asyncio.sleep(3)
                     
-                    # Step 3: Ready
-                    logger.info("🎉 Step 3: 所有Dashboard处理完成，系统Ready!")
+                    # Step 3: Rebuild FAISS index if contexts were updated
+                    logger.info("🎉 Step 3: 所有Dashboard处理完成，开始重建FAISS索引...")
+                    
+                    if analysis_count > 0:
+                        logger.info(f"🔍 有 {analysis_count} 个context被更新，重建FAISS索引...")
+                        if smart_context.use_faiss and smart_context.faiss_index_manager:
+                            # Rebuild FAISS index with updated contexts
+                            if smart_context.faiss_index_manager.build_index_from_contexts(force_rebuild=True):
+                                logger.info("✅ FAISS索引重建成功")
+                            else:
+                                logger.warning("⚠️ FAISS索引重建失败")
+                        else:
+                            logger.warning("⚠️ FAISS未启用，跳过索引重建")
+                    else:
+                        logger.info("ℹ️ 没有context被更新，跳过FAISS索引重建")
+                    
+                    # Step 4: Ready
+                    logger.info("🎉 Step 4: 系统完全Ready!")
                     logger.info(f"📊 处理统计:")
                     logger.info(f"   - 总共Dashboards: {len(dashboard_list)}")
                     logger.info(f"   - 已处理: {processed_count}")
                     logger.info(f"   - AI分析完成: {analysis_count}")
                     logger.info(f"   - 成功更新: {len(all_update_results.get('updated_contexts', []))}")
                     logger.info(f"   - 失败: {len(all_update_results.get('failed_updates', []))}")
+                    
+                    # Log FAISS status
+                    if smart_context.use_faiss and smart_context.faiss_index_manager:
+                        faiss_status = smart_context.faiss_index_manager.get_index_status()
+                        logger.info(f"🔍 FAISS状态: {faiss_status['total_dashboards']} 个仪表板已索引")
                     
                     return all_update_results
                         
