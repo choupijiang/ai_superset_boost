@@ -144,6 +144,19 @@ class SupersetAutomation:
         except Exception as e:
             logger.warning(f"⚠️  Error closing browser: {e}")
     
+    def _get_full_dashboard_url(self, dashboard_id: str) -> str:
+        """Construct full dashboard URL from dashboard ID"""
+        return f"{self.superset_url}/superset/dashboard/{dashboard_id}/"
+    
+    def _ensure_full_url(self, url: str) -> str:
+        """Ensure URL is a full URL, prepend superset_url if it's relative"""
+        if url.startswith('http'):
+            return url
+        elif url.startswith('/'):
+            return f"{self.superset_url}{url}"
+        else:
+            return f"{self.superset_url}/{url}"
+    
     def _log_screenshot_operation(self, operation: str, file_path: str, success: bool = True, error: str = None):
         """Log screenshot file operations with detailed information"""
         try:
@@ -362,8 +375,8 @@ class SupersetAutomation:
                     dashboard_id = dashboard.get('id')
                     dashboard_title = dashboard.get('dashboard_title', dashboard.get('title', 'Unknown Dashboard'))
                     
-                    # Construct dashboard URL
-                    dashboard_url = f"/superset/dashboard/{dashboard_id}/"
+                    # Construct dashboard URL (full URL)
+                    dashboard_url = self._get_full_dashboard_url(dashboard_id)
                     
                     dashboards.append({
                         'id': dashboard_id,

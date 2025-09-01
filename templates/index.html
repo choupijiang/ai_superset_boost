@@ -1,0 +1,2775 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能商业分析系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            /* Apple-inspired Color System */
+            --primary-color: #007AFF;
+            --primary-light: #5AC8FA;
+            --primary-dark: #0051D5;
+            --secondary-color: #AF52DE;
+            --accent-color: #32D74B;
+            --success-color: #34C759;
+            --warning-color: #FF9500;
+            --error-color: #FF3B30;
+            
+            /* Neumorphic Background */
+            --dark-bg: #000000;
+            --card-bg: rgba(30, 30, 30, 0.8);
+            --surface-bg: rgba(50, 50, 50, 0.6);
+            --glass-bg: rgba(255, 255, 255, 0.08);
+            --glass-border: rgba(255, 255, 255, 0.12);
+            
+            /* Text Hierarchy */
+            --text-primary: #FFFFFF;
+            --text-secondary: #EBEBF5;
+            --text-muted: #8E8E93;
+            --text-accent: #007AFF;
+            --text-tertiary: #C7C7CC;
+            
+            /* Spacing System - Apple Human Interface Guidelines */
+            --spacing-xs: 4px;
+            --spacing-sm: 8px;
+            --spacing-md: 16px;
+            --spacing-lg: 24px;
+            --spacing-xl: 32px;
+            --spacing-2xl: 48px;
+            --spacing-3xl: 64px;
+            
+            /* Border Radius - Apple Style */
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+            --radius-xl: 18px;
+            --radius-2xl: 22px;
+            
+            /* Advanced Shadows - Apple Design Language */
+            --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.15);
+            --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.2);
+            --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.25);
+            --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.3);
+            --shadow-2xl: 0 24px 64px rgba(0, 0, 0, 0.35);
+            --shadow-glow: 0 0 32px rgba(0, 122, 255, 0.4);
+            --shadow-inner: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+            
+            /* Premium Gradients */
+            --gradient-primary: linear-gradient(135deg, #007AFF 0%, #5856D6 100%);
+            --gradient-secondary: linear-gradient(135deg, #AF52DE 0%, #FF2D92 100%);
+            --gradient-accent: linear-gradient(135deg, #32D74B 0%, #00C7BE 100%);
+            --gradient-surface: linear-gradient(135deg, rgba(30, 30, 30, 0.9) 0%, rgba(50, 50, 50, 0.7) 100%);
+            --gradient-glass: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+            
+            /* Blur Effects */
+            --blur-sm: 8px;
+            --blur-md: 16px;
+            --blur-lg: 24px;
+            --blur-xl: 32px;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            background: var(--dark-bg);
+            background-image: 
+                radial-gradient(circle at 20% 30%, rgba(0, 122, 255, 0.08) 0%, transparent 65%),
+                radial-gradient(circle at 85% 60%, rgba(175, 82, 222, 0.06) 0%, transparent 55%),
+                radial-gradient(circle at 45% 85%, rgba(50, 215, 75, 0.05) 0%, transparent 50%);
+            min-height: 100vh;
+            padding: var(--spacing-lg);
+            position: relative;
+            overflow-x: hidden;
+            line-height: 1.5;
+            color: var(--text-primary);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            font-weight: 400;
+        }
+
+        /* Subtle animated background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: inherit;
+            z-index: -1;
+            animation: backgroundShift 30s ease-in-out infinite;
+        }
+
+        @keyframes backgroundShift {
+            0%, 100% { transform: rotate(0deg) scale(1); opacity: 0.3; }
+            50% { transform: rotate(180deg) scale(1.05); opacity: 0.5; }
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: var(--gradient-surface);
+            backdrop-filter: blur(var(--blur-xl));
+            -webkit-backdrop-filter: blur(var(--blur-xl));
+            border-radius: var(--radius-2xl);
+            border: 1px solid var(--glass-border);
+            box-shadow: 
+                var(--shadow-2xl),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+            position: relative;
+            transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+
+        .container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+            animation: shimmer 4s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        .header {
+            background: var(--gradient-glass);
+            color: var(--text-primary);
+            padding: var(--spacing-3xl) var(--spacing-2xl);
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            border-bottom: 1px solid var(--glass-border);
+            backdrop-filter: blur(var(--blur-lg));
+            -webkit-backdrop-filter: blur(var(--blur-lg));
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(circle at 30% 40%, rgba(79, 70, 229, 0.2) 0%, transparent 50%),
+                radial-gradient(circle at 70% 60%, rgba(236, 72, 153, 0.1) 0%, transparent 50%);
+            animation: headerGlow 6s ease-in-out infinite;
+        }
+
+        @keyframes headerGlow {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.6; }
+        }
+
+        .header h1 {
+            font-size: 2.75rem;
+            font-weight: 700;
+            margin-bottom: var(--spacing-md);
+            background: var(--gradient-primary);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            position: relative;
+            z-index: 1;
+            letter-spacing: -0.02em;
+            line-height: 1.1;
+        }
+
+        .header p {
+            font-size: 1.125rem;
+            color: var(--text-secondary);
+            position: relative;
+            z-index: 1;
+            font-weight: 400;
+            letter-spacing: 0.025em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            padding: var(--spacing-3xl);
+        }
+
+        .input-section {
+            margin-bottom: var(--spacing-3xl);
+            position: relative;
+        }
+
+        .question-input {
+            width: 100%;
+            min-height: 140px;
+            padding: var(--spacing-xl);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius-xl);
+            font-size: 1rem;
+            resize: vertical;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            background: var(--glass-bg);
+            backdrop-filter: blur(var(--blur-md));
+            -webkit-backdrop-filter: blur(var(--blur-md));
+            color: var(--text-primary);
+            font-family: inherit;
+            line-height: 1.5;
+            box-shadow: 
+                var(--shadow-inner),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+
+        .question-input::placeholder {
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        .question-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 
+                0 0 0 4px rgba(79, 70, 229, 0.1),
+                var(--shadow-lg);
+            transform: translateY(-2px);
+        }
+
+        .analyze-btn {
+            background: var(--gradient-primary);
+            color: white;
+            border: none;
+            padding: 1.125rem 2.75rem;
+            font-size: 1.125rem;
+            font-weight: 500;
+            border-radius: var(--radius-xl);
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            margin-top: var(--spacing-xl);
+            position: relative;
+            overflow: hidden;
+            text-transform: none;
+            letter-spacing: 0.01em;
+            box-shadow: 
+                var(--shadow-lg),
+                0 0 0 1px rgba(255, 255, 255, 0.1);
+            display: inline-flex;
+            align-items: center;
+            gap: var(--spacing-md);
+            backdrop-filter: blur(var(--blur-sm));
+            -webkit-backdrop-filter: blur(var(--blur-sm));
+        }
+
+        .analyze-btn::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .analyze-btn:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        .analyze-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-xl), var(--shadow-glow);
+        }
+
+        .analyze-btn:active {
+            transform: translateY(0);
+            box-shadow: var(--shadow-md);
+        }
+
+        .analyze-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 0.8; }
+        }
+
+        .progress-section {
+            display: none;
+            margin: var(--spacing-2xl) 0;
+            padding: var(--spacing-xl);
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border-radius: var(--radius-xl);
+            border: 1px solid var(--glass-border);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .progress-section::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(79, 70, 229, 0.1), transparent);
+            animation: progressShimmer 3s infinite;
+        }
+
+        @keyframes progressShimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        .progress-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 25px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .progress-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--glass-border);
+            border-top: 3px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 15px;
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .progress-header h3 {
+            color: var(--text-primary);
+            font-size: 1.4em;
+            margin-bottom: 5px;
+        }
+
+        .progress-header p {
+            color: var(--text-secondary);
+            font-size: 0.95em;
+        }
+
+        .progress-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .progress-step {
+            display: flex;
+            align-items: center;
+            padding: 15px 20px;
+            background: var(--card-bg);
+            backdrop-filter: blur(5px);
+            border-radius: 15px;
+            border: 1px solid var(--glass-border);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .progress-step::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: var(--glass-border);
+            transition: all 0.3s ease;
+        }
+
+        .progress-step.active::before {
+            background: var(--primary-color);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+        }
+
+        .progress-step.completed::before {
+            background: var(--accent-color);
+            box-shadow: 0 0 20px rgba(131, 56, 236, 0.5);
+        }
+
+        .progress-step.error::before {
+            background: var(--secondary-color);
+            box-shadow: 0 0 20px rgba(255, 0, 110, 0.5);
+        }
+
+        .progress-step.active {
+            border-color: var(--primary-color);
+            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.2);
+            transform: translateX(5px);
+        }
+
+        .progress-step.completed {
+            border-color: var(--accent-color);
+            box-shadow: 0 5px 20px rgba(131, 56, 236, 0.2);
+        }
+
+        .progress-step.error {
+            border-color: var(--secondary-color);
+            box-shadow: 0 5px 20px rgba(255, 0, 110, 0.2);
+        }
+
+        .step-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            margin-right: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: bold;
+            color: white;
+            transition: all 0.3s ease;
+        }
+
+        .step-icon.waiting {
+            background: var(--glass-border);
+        }
+
+        .step-icon.active {
+            background: var(--primary-color);
+            box-shadow: 0 0 15px rgba(0, 212, 255, 0.5);
+            animation: iconPulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes iconPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .step-icon.completed {
+            background: var(--accent-color);
+            box-shadow: 0 0 15px rgba(131, 56, 236, 0.5);
+        }
+
+        .step-icon.error {
+            background: var(--secondary-color);
+            box-shadow: 0 0 15px rgba(255, 0, 110, 0.5);
+        }
+
+        .step-content {
+            flex: 1;
+        }
+
+        .step-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 5px;
+            font-size: 1.1em;
+        }
+
+        .step-description {
+            font-size: 0.9em;
+            color: var(--text-secondary);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--glass-border);
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 25px 0;
+            position: relative;
+        }
+
+        .progress-bar::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.3), transparent);
+            animation: progressBarGlow 2s ease-in-out infinite;
+        }
+
+        @keyframes progressBarGlow {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary-color), var(--secondary-color), var(--accent-color));
+            width: 0%;
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+            animation: progressFillShimmer 1.5s infinite;
+        }
+
+        @keyframes progressFillShimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+
+
+
+        .final-result {
+            display: none;
+            margin-top: var(--spacing-2xl);
+            padding: var(--spacing-3xl);
+            background: var(--card-bg);
+            backdrop-filter: blur(15px);
+            border-radius: var(--radius-2xl);
+            border: 1px solid var(--glass-border);
+            box-shadow: var(--shadow-xl);
+            position: relative;
+            overflow: hidden;
+            animation: resultSlideIn 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes resultSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .final-result::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(circle at 20% 50%, rgba(0, 212, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(255, 0, 110, 0.1) 0%, transparent 50%);
+            animation: resultGlow 4s ease-in-out infinite;
+        }
+
+        @keyframes resultGlow {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.7; }
+        }
+
+        .final-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--glass-border);
+            position: relative;
+            z-index: 1;
+        }
+
+        .final-title {
+            font-size: 2em;
+            font-weight: 700;
+            color: var(--text-primary);
+            flex: 1;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .final-badge {
+            background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
+            color: white;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 0.9em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.3);
+            animation: badgePulse 2s ease-in-out infinite;
+        }
+
+        @keyframes badgePulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        .final-content {
+            font-size: 1.1em;
+            line-height: 1.8;
+            color: var(--text-primary);
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            padding: 30px;
+            border-radius: 20px;
+            margin-top: 25px;
+            border: 1px solid var(--glass-border);
+            box-shadow: 
+                0 10px 30px rgba(0, 0, 0, 0.2),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            position: relative;
+            z-index: 1;
+        }
+
+        .final-content h1, .final-content h2, .final-content h3 {
+            color: var(--primary-color);
+            margin-top: 0;
+            font-weight: 600;
+        }
+
+        .final-content h4 {
+            border-left: 4px solid var(--primary-color);
+            padding-left: 15px;
+            color: var(--text-primary);
+            margin: 20px 0 15px 0;
+            font-size: 1.2em;
+        }
+
+        .final-content h5 {
+            color: var(--text-primary);
+            margin: 15px 0 10px 0;
+            font-size: 1.1em;
+        }
+
+        .final-content h6 {
+            color: var(--text-secondary);
+            margin: 12px 0 8px 0;
+            font-size: 1em;
+        }
+
+        .final-content p {
+            margin: 15px 0;
+            text-align: justify;
+        }
+
+        .final-content ul {
+            margin: 15px 0;
+            padding-left: 25px;
+        }
+
+        .final-content li {
+            margin: 8px 0;
+            line-height: 1.6;
+            color: var(--text-primary);
+        }
+
+        .final-content strong {
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+
+        .final-content em {
+            color: var(--secondary-color);
+            font-style: italic;
+        }
+        
+        .final-content h1, .final-content h2, .final-content h3 {
+            margin-top: 0;
+        }
+        
+        .final-content p:first-child {
+            margin-top: 0;
+        }
+        
+        .final-content p:last-child {
+            margin-bottom: 0;
+        }
+        
+        .final-content ul {
+            margin: 12px 0;
+            padding-left: 25px;
+        }
+        
+        .final-content li {
+            margin: 6px 0;
+            line-height: 1.6;
+        }
+        
+        .final-content h4 {
+            border-left: 4px solid #667eea;
+            padding-left: 12px;
+        }
+        
+        .final-content h5 {
+            color: #495057;
+        }
+        
+        .final-content h6 {
+            color: #6c757d;
+        }
+        
+        .final-content p {
+            text-align: justify;
+        }
+
+        .error-message {
+            background: #fff5f5;
+            border: 1px solid #fed7d7;
+            color: #c53030;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+
+        .success-message {
+            background: #f0fff4;
+            border: 1px solid #9ae6b4;
+            color: #2f855a;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+
+        .timestamp {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 15px;
+            text-align: right;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 25px 0;
+        }
+
+        .stat-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(var(--blur-md));
+            -webkit-backdrop-filter: blur(var(--blur-md));
+            padding: var(--spacing-2xl);
+            border-radius: var(--radius-2xl);
+            text-align: center;
+            border: 1px solid var(--glass-border);
+            box-shadow: 
+                var(--shadow-lg),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.1), transparent);
+            animation: statCardShimmer 3s infinite;
+        }
+
+        @keyframes statCardShimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 
+                0 15px 40px rgba(0, 0, 0, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            border-color: var(--primary-color);
+        }
+
+        .stat-number {
+            font-size: 2.5em;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+            animation: statNumberPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes statNumberPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        .stat-label {
+            font-size: 0.95em;
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Loading indicator styles */
+        .loading-indicator {
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading-dots {
+            font-size: 1.1em;
+            color: #667eea;
+            font-weight: 500;
+        }
+
+        .loading-progress {
+            width: 100%;
+            height: 4px;
+            background: #e9ecef;
+            border-radius: 2px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+
+        .loading-progress::after {
+            content: '';
+            display: block;
+            width: 30%;
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            animation: loading-progress 1.5s ease-in-out infinite;
+        }
+
+        @keyframes loading-progress {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100vw); }
+        }
+
+
+        /* Improved step animations */
+        .analysis-step {
+            transition: all 0.4s ease;
+        }
+
+        .analysis-step.active {
+            animation: stepActive 0.6s ease;
+        }
+
+        @keyframes stepActive {
+            0% { transform: translateX(-5px); }
+            50% { transform: translateX(2px); }
+            100% { transform: translateX(0); }
+        }
+
+        /* Better visual feedback for status changes */
+        .analysis-status {
+            transition: all 0.3s ease;
+        }
+
+        .analysis-status.completed {
+            animation: statusComplete 0.5s ease;
+        }
+
+        @keyframes statusComplete {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        /* Improved screenshot loading */
+        .dashboard-screenshot img {
+            transition: all 0.3s ease;
+        }
+
+        .dashboard-screenshot img:hover {
+            transform: scale(1.02);
+        }
+
+        /* Better progress bar animation */
+        .progress-fill {
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Enhanced pulse animation */
+        @keyframes pulse {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.05); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        @keyframes activePulse {
+            0%, 100% { 
+                transform: scale(1);
+                box-shadow: 
+                    0 0 20px rgba(0, 122, 255, 0.6),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+            }
+            50% { 
+                transform: scale(1.1);
+                box-shadow: 
+                    0 0 30px rgba(0, 122, 255, 0.8),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+            }
+        }
+
+
+        /* Real-time analysis layout */
+        .analysis-live {
+            display: none;
+            margin: var(--spacing-2xl) 0;
+            padding: var(--spacing-2xl);
+            background: var(--glass-bg);
+            backdrop-filter: blur(var(--blur-lg));
+            -webkit-backdrop-filter: blur(var(--blur-lg));
+            border-radius: var(--radius-2xl);
+            border: 1px solid var(--glass-border);
+            transition: all 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            position: relative;
+            overflow: hidden;
+            animation: liveAnalysisSlideIn 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            box-shadow: 
+                var(--shadow-xl),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+
+        @keyframes liveAnalysisSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .analysis-live::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.1), transparent);
+            animation: liveAnalysisShimmer 3s infinite;
+        }
+
+        @keyframes liveAnalysisShimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        .analysis-live h3 {
+            color: var(--text-primary);
+            font-size: 1.4em;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        .analysis-live-content {
+            display: grid;
+            grid-template-columns: 1fr 1.2fr;
+            gap: 25px;
+            align-items: start;
+            position: relative;
+            z-index: 1;
+        }
+
+        .analysis-visual {
+            position: relative;
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid var(--glass-border);
+            box-shadow: 
+                0 10px 30px rgba(0, 0, 0, 0.2),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            transition: all 0.3s ease;
+        }
+
+        .analysis-visual:hover {
+            transform: translateY(-3px);
+            box-shadow: 
+                0 15px 40px rgba(0, 0, 0, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            border-color: var(--primary-color);
+        }
+
+        .analysis-visual img {
+            width: 100%;
+            max-height: 250px;
+            object-fit: contain;
+            border-radius: 10px;
+            border: 1px solid var(--glass-border);
+            transition: all 0.3s ease;
+        }
+
+        .analysis-visual img:hover {
+            transform: scale(1.02);
+            border-color: var(--primary-color);
+        }
+
+        .analysis-visual-title {
+            font-size: 1em;
+            font-weight: 600;
+            color: var(--primary-color);
+            margin-bottom: 15px;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .analysis-progress {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            border: 1px solid var(--glass-border);
+            box-shadow: 
+                0 10px 30px rgba(0, 0, 0, 0.2),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            min-height: 300px;
+        }
+
+        .analysis-progress-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .analysis-progress-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #2c3e50;
+            flex: 1;
+        }
+
+        .analysis-status {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 500;
+            color: white;
+        }
+
+        .analysis-status.analyzing {
+            background: #667eea;
+            animation: pulse 2s infinite;
+        }
+
+        .analysis-status.completed {
+            background: #28a745;
+        }
+
+        .analysis-status.error {
+            background: #dc3545;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+
+        .analysis-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .analysis-step {
+            display: flex;
+            align-items: center;
+            padding: 16px 20px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(var(--blur-md));
+            -webkit-backdrop-filter: blur(var(--blur-md));
+            border-radius: var(--radius-lg);
+            font-size: 0.95em;
+            color: var(--text-primary);
+            transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            border-left: 3px solid transparent;
+            box-shadow: 
+                var(--shadow-sm),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            border: 1px solid var(--glass-border);
+        }
+
+        .analysis-step.active {
+            background: rgba(0, 122, 255, 0.12);
+            border-left-color: var(--primary-color);
+            border-color: rgba(0, 122, 255, 0.2);
+            box-shadow: 
+                0 8px 32px rgba(0, 122, 255, 0.25),
+                inset 0 1px 0 rgba(255, 255, 255, 0.15);
+            color: var(--text-primary);
+            transform: translateX(2px);
+        }
+
+        .analysis-step.completed {
+            background: rgba(50, 215, 75, 0.08);
+            border-left-color: var(--accent-color);
+            border-color: rgba(50, 215, 75, 0.15);
+            color: var(--text-primary);
+        }
+
+        .analysis-step.error {
+            background: rgba(255, 59, 48, 0.08);
+            border-left-color: var(--error-color);
+            border-color: rgba(255, 59, 48, 0.15);
+            color: var(--text-primary);
+        }
+
+        .step-icon-small {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            margin-right: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: white;
+            box-shadow: 
+                var(--shadow-sm),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+            transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+
+        .step-icon-small.waiting {
+            background: var(--text-muted);
+        }
+
+        .step-icon-small.active {
+            background: var(--primary-color);
+            box-shadow: 
+                0 0 20px rgba(0, 122, 255, 0.6),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+            animation: activePulse 2s ease-in-out infinite;
+        }
+
+        .step-icon-small.completed {
+            background: var(--accent-color);
+            box-shadow: 
+                0 0 16px rgba(50, 215, 75, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        }
+
+        .step-icon-small.error {
+            background: var(--error-color);
+            box-shadow: 
+                0 0 16px rgba(255, 59, 48, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        }
+
+        .analysis-result {
+            margin-top: 20px;
+            padding: 18px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 4px solid #28a745;
+            line-height: 1.7;
+            color: #2c3e50;
+            font-size: 0.95em;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        
+        .analysis-result h4 {
+            border-left: 3px solid #667eea;
+            padding-left: 10px;
+            margin: 15px 0 10px 0;
+            font-size: 1.1em;
+        }
+        
+        .analysis-result h5 {
+            color: #495057;
+            margin: 12px 0 8px 0;
+            font-size: 1em;
+        }
+        
+        .analysis-result h6 {
+            color: #6c757d;
+            margin: 10px 0 6px 0;
+            font-size: 0.95em;
+        }
+        
+        .analysis-result ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        
+        .analysis-result li {
+            margin: 4px 0;
+            line-height: 1.5;
+        }
+        
+        .analysis-result p {
+            margin: 8px 0;
+            text-align: justify;
+        }
+
+        .analysis-result.error {
+            border-left-color: #dc3545;
+            background: #fff5f5;
+        }
+
+        .analysis-result-title {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 8px;
+            font-size: 1em;
+        }
+
+        /* Responsive layout for analysis live */
+        @media (max-width: 768px) {
+            .analysis-live-content {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+            
+            .analysis-visual img {
+                max-height: 200px;
+            }
+            
+            .analysis-progress {
+                min-height: auto;
+            }
+        }
+
+
+        /* Expandable analysis sections */
+        .analysis-section {
+            margin-bottom: var(--spacing-lg);
+            padding: var(--spacing-lg);
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border-radius: var(--radius-xl);
+            border: 1px solid var(--glass-border);
+            border-left: 4px solid var(--primary-color);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .analysis-section::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(79, 70, 229, 0.1), transparent);
+            animation: sectionShimmer 4s infinite;
+        }
+
+        @keyframes sectionShimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        .analysis-section:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+            border-color: var(--primary-color);
+        }
+
+        .analysis-section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            padding: var(--spacing-md);
+            border-radius: var(--radius-lg);
+            transition: all 0.3s ease;
+            position: relative;
+            z-index: 1;
+        }
+
+        .analysis-section-header:hover {
+            background: rgba(79, 70, 229, 0.1);
+        }
+
+        .analysis-section-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 1.125rem;
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-md);
+        }
+
+        .dashboard-icon {
+            width: 2rem;
+            height: 2rem;
+            background: var(--gradient-primary);
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.875rem;
+            color: white;
+            font-weight: 600;
+        }
+
+        .analysis-section-toggle {
+            font-size: 1.25rem;
+            color: var(--primary-color);
+            transition: transform 0.3s ease;
+            padding: var(--spacing-sm);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .analysis-section-toggle:hover {
+            background: rgba(79, 70, 229, 0.2);
+            transform: scale(1.1);
+        }
+
+        .analysis-section.expanded .analysis-section-toggle {
+            transform: rotate(180deg);
+        }
+
+        .analysis-section-content {
+            margin-top: var(--spacing-lg);
+            line-height: 1.6;
+            color: var(--text-primary);
+            padding: var(--spacing-lg);
+            background: var(--surface-bg);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--glass-border);
+            display: none;
+            position: relative;
+            z-index: 1;
+        }
+
+        .analysis-section.expanded .analysis-section-content {
+            display: block;
+            animation: expandContent 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes expandContent {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .dashboard-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--spacing-lg);
+            padding: var(--spacing-md);
+            background: rgba(79, 70, 229, 0.1);
+            border-radius: var(--radius-lg);
+            border-left: 3px solid var(--primary-color);
+        }
+
+        .dashboard-meta {
+            display: flex;
+            gap: var(--spacing-lg);
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .dashboard-meta-item {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+        }
+
+        .dashboard-link {
+            background: var(--gradient-primary);
+            color: white;
+            padding: var(--spacing-sm) var(--spacing-lg);
+            border-radius: var(--radius-xl);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            box-shadow: var(--shadow-md);
+        }
+
+        .dashboard-link:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg), var(--shadow-glow);
+            text-decoration: none;
+            color: white;
+        }
+
+        .dashboard-screenshot-preview {
+            width: 100%;
+            max-height: 200px;
+            object-fit: contain;
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--glass-border);
+            margin: var(--spacing-md) 0;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .dashboard-screenshot-preview:hover {
+            transform: scale(1.02);
+            border-color: var(--primary-color);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .analysis-summary {
+            background: rgba(124, 58, 237, 0.1);
+            border-left: 3px solid var(--accent-color);
+            padding: var(--spacing-md);
+            border-radius: var(--radius-lg);
+            margin: var(--spacing-lg) 0;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .chart-analysis-item {
+            background: var(--surface-bg);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-md);
+            margin: var(--spacing-md) 0;
+            border-left: 3px solid var(--secondary-color);
+        }
+
+        .chart-analysis-title {
+            font-weight: 600;
+            color: var(--secondary-color);
+            margin-bottom: var(--spacing-sm);
+            font-size: 1rem;
+        }
+
+        /* Responsive design */
+        @media (max-width: 768px) {
+            body {
+                padding: var(--spacing-md);
+            }
+            
+            .container {
+                border-radius: var(--radius-xl);
+            }
+            
+            .main-content {
+                padding: var(--spacing-2xl);
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .header p {
+                font-size: 1rem;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: var(--spacing-md);
+            }
+            
+            .stat-card {
+                padding: var(--spacing-lg);
+            }
+            
+            .stat-number {
+                font-size: 2rem;
+            }
+            
+            .analysis-live-content {
+                grid-template-columns: 1fr;
+                gap: var(--spacing-lg);
+            }
+            
+            .analysis-visual img {
+                max-height: 200px;
+            }
+            
+            .analysis-progress {
+                min-height: auto;
+            }
+            
+            .analyze-btn {
+                padding: var(--spacing-md) var(--spacing-xl);
+                font-size: 1rem;
+                width: 100%;
+                justify-content: center;
+            }
+            
+            .question-input {
+                min-height: 120px;
+                padding: var(--spacing-lg);
+                font-size: 0.875rem;
+            }
+            
+            .dashboard-info {
+                flex-direction: column;
+                gap: var(--spacing-md);
+                align-items: flex-start;
+            }
+            
+            .dashboard-meta {
+                flex-direction: column;
+                gap: var(--spacing-sm);
+            }
+            
+            .dashboard-link {
+                align-self: stretch;
+                justify-content: center;
+            }
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: var(--spacing-sm);
+            }
+            
+            .container {
+                border-radius: var(--radius-lg);
+            }
+            
+            .main-content {
+                padding: var(--spacing-xl);
+            }
+            
+            .header {
+                padding: var(--spacing-xl) var(--spacing-lg);
+            }
+            
+            .header h1 {
+                font-size: 1.75rem;
+            }
+            
+            .header p {
+                font-size: 0.875rem;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .analyze-btn {
+                width: 100%;
+                padding: var(--spacing-sm) var(--spacing-lg);
+                font-size: 0.875rem;
+            }
+            
+            .progress-section {
+                padding: var(--spacing-lg);
+            }
+            
+            .final-result {
+                padding: var(--spacing-xl);
+            }
+            
+            .final-header {
+                flex-direction: column;
+                gap: var(--spacing-md);
+                text-align: center;
+            }
+            
+            .analysis-section {
+                padding: var(--spacing-md);
+            }
+            
+            .analysis-section-content {
+                padding: var(--spacing-md);
+            }
+            
+            .dashboard-meta-item {
+                font-size: 0.75rem;
+            }
+        }
+
+        /* Dark mode optimization */
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --text-primary: #F8FAFC;
+                --text-secondary: #CBD5E1;
+                --text-muted: #94A3B8;
+            }
+        }
+
+        /* Reduced motion preference */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        /* Additional animations and micro-interactions */
+        .float-animation {
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .glow-effect {
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes glow {
+            from { box-shadow: 0 0 10px rgba(0, 212, 255, 0.5); }
+            to { box-shadow: 0 0 20px rgba(0, 212, 255, 0.8), 0 0 30px rgba(255, 0, 110, 0.6); }
+        }
+
+        .typewriter {
+            overflow: hidden;
+            border-right: 2px solid var(--primary-color);
+            white-space: nowrap;
+            animation: typing 3s steps(40, end), blink-caret 0.75s step-end infinite;
+        }
+
+        @keyframes typing {
+            from { width: 0; }
+            to { width: 100%; }
+        }
+
+        @keyframes blink-caret {
+            from, to { border-color: transparent; }
+            50% { border-color: var(--primary-color); }
+        }
+
+        /* Particle effect background */
+        .particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .particle {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: var(--primary-color);
+            border-radius: 50%;
+            opacity: 0.6;
+            animation: particleFloat 20s infinite linear;
+        }
+
+        @keyframes particleFloat {
+            0% {
+                transform: translateY(100vh) rotate(0deg);
+                opacity: 0;
+            }
+            10% {
+                opacity: 0.6;
+            }
+            90% {
+                opacity: 0.6;
+            }
+            100% {
+                transform: translateY(-100vh) rotate(360deg);
+                opacity: 0;
+            }
+        }
+
+        /* Holographic effect */
+        .holographic {
+            background: linear-gradient(45deg, 
+                rgba(0, 212, 255, 0.1), 
+                rgba(255, 0, 110, 0.1), 
+                rgba(131, 56, 236, 0.1));
+            background-size: 200% 200%;
+            animation: holographicShift 3s ease-in-out infinite;
+        }
+
+        @keyframes holographicShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        /* Enhanced focus states */
+        .question-input:focus-visible,
+        .analyze-btn:focus-visible {
+            outline: 2px solid var(--primary-color);
+            outline-offset: 2px;
+        }
+
+        /* Loading states */
+        .loading-shimmer {
+            background: linear-gradient(90deg, 
+                var(--surface-bg) 25%, 
+                rgba(79, 70, 229, 0.1) 50%, 
+                var(--surface-bg) 75%);
+            background-size: 200% 100%;
+            animation: shimmer-loading 1.5s infinite;
+        }
+
+        @keyframes shimmer-loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* Smooth scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--surface-bg);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--primary-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary-light);
+        }
+
+        /* Focus indicators for accessibility */
+        *:focus {
+            outline: 2px solid var(--primary-color);
+            outline-offset: 2px;
+        }
+
+        *:focus:not(:focus-visible) {
+            outline: none;
+        }
+
+        *:focus-visible {
+            outline: 2px solid var(--primary-color);
+            outline-offset: 2px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Particle effect background -->
+    <div class="particles" id="particles"></div>
+    
+    <div class="container">
+        <div class="header">
+            <h1 class="float-animation">智能商业分析系统</h1>
+            <p>基于 Superset 数据的 AI 驱动业务分析</p>
+        </div>
+        
+        <div class="main-content">
+            <div class="input-section">
+                <textarea 
+                    class="question-input" 
+                    id="questionInput" 
+                    placeholder="请输入您的业务分析问题，例如：&#10;- 本月销售趋势如何？&#10;- 哪个产品线表现最好？&#10;- 用户活跃度有什么变化？&#10;- 成本结构分析&#10;- 等等..."
+                ></textarea>
+                <br>
+                <button class="analyze-btn" id="analyzeBtn" onclick="analyzeQuestionProgressive()">
+                    <span>🚀</span>
+                    <span>开始智能分析</span>
+                </button>
+            </div>
+
+            <div class="progress-section" id="progressSection">
+                <div class="progress-header">
+                    <div class="progress-spinner"></div>
+                    <div>
+                        <h3>AI正在进行分析</h3>
+                        <p>逐个分析看板并实时显示结果</p>
+                    </div>
+                </div>
+                
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                
+                <div class="progress-steps" id="progressSteps">
+                    <!-- Progress steps will be populated here -->
+                </div>
+            </div>
+
+            <div class="analysis-live" id="analysisLive">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3>🔍 实时分析过程</h3>
+                    <button id="collapseLiveBtn" onclick="toggleAnalysisLive()" style="display: none; background: #6c757d; color: white; border: none; padding: 6px 12px; border-radius: 15px; font-size: 0.8em; cursor: pointer; transition: all 0.3s ease;">
+                        📁 收起
+                    </button>
+                </div>
+                <div id="liveAnalysisContainer">
+                    <!-- Real-time analysis will appear here -->
+                </div>
+            </div>
+
+
+            <div class="final-result" id="finalResult">
+                <!-- Final comprehensive result will appear here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize particle effect
+        function createParticles() {
+            const particlesContainer = document.getElementById('particles');
+            const particleCount = 50;
+            
+            for (let i = 0; i < particleCount; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+                particle.style.left = Math.random() * 100 + '%';
+                particle.style.animationDelay = Math.random() * 20 + 's';
+                particle.style.animationDuration = (15 + Math.random() * 10) + 's';
+                
+                // Random color variation
+                const colors = ['#00d4ff', '#ff006e', '#8338ec'];
+                const color = colors[Math.floor(Math.random() * colors.length)];
+                particle.style.background = color;
+                particle.style.boxShadow = `0 0 10px ${color}`;
+                
+                particlesContainer.appendChild(particle);
+            }
+        }
+        
+        // Initialize particles when page loads
+        document.addEventListener('DOMContentLoaded', createParticles);
+        
+        let eventSource = null;
+        let currentStep = 0;
+        let totalSteps = 0;
+        let completedDashboards = 0;
+        let expectedDashboards = 0;
+
+        async function analyzeQuestionProgressive() {
+            const question = document.getElementById('questionInput').value.trim();
+            if (!question) {
+                alert('请输入分析问题');
+                return;
+            }
+
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            const progressSection = document.getElementById('progressSection');
+            const finalResult = document.getElementById('finalResult');
+
+            // Reset UI
+            analyzeBtn.disabled = true;
+            analyzeBtn.textContent = '🔄 分析中...';
+            progressSection.style.display = 'block';
+            finalResult.style.display = 'none';
+            
+            // Reset progress
+            currentStep = 0;
+            totalSteps = 0;
+            updateProgress(0);
+
+            // Close existing event source if any
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            try {
+                // Start progressive analysis
+                eventSource = new EventSource('/analyze_progressive', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ question: question })
+                });
+
+                // Create a form to send the initial request
+                const formData = new FormData();
+                formData.append('question', question);
+
+                fetch('/analyze_progressive', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ question: question })
+                }).then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    
+                    function readStream() {
+                        return reader.read().then(({ done, value }) => {
+                            if (done) {
+                                return;
+                            }
+                            
+                            const chunk = decoder.decode(value);
+                            const lines = chunk.split('\n');
+                            
+                            lines.forEach(line => {
+                                if (line.startsWith('data: ')) {
+                                    try {
+                                        const data = JSON.parse(line.slice(6));
+                                        handleProgressEvent(data);
+                                    } catch (e) {
+                                        console.error('Error parsing SSE data:', e);
+                                    }
+                                }
+                            });
+                            
+                            return readStream();
+                        });
+                    }
+                    
+                    return readStream();
+                }).catch(error => {
+                    console.error('Error:', error);
+                    showError('连接分析服务失败: ' + error.message);
+                });
+
+            } catch (error) {
+                console.error('Error starting analysis:', error);
+                showError('启动分析失败: ' + error.message);
+                resetUI();
+            }
+        }
+
+        function handleProgressEvent(event) {
+            console.log('Received event:', event);
+
+            switch (event.type) {
+                case 'start':
+                    addProgressStep('start', '开始分析', '正在初始化分析系统...');
+                    break;
+                    
+                case 'status':
+                    updateProgressStep('status', event.data.message, event.data.step);
+                    break;
+                    
+                case 'dashboard_captured':
+                    totalSteps = event.data.total_dashboards;
+                    expectedDashboards = event.data.total_dashboards;
+                    addProgressStep('dashboard', `看板 ${event.data.dashboard_index + 1}/${totalSteps}`, event.data.dashboard_title);
+                    break;
+                    
+                case 'analyzing':
+                    updateProgressStep('analyzing', `正在分析: ${event.data.dashboard_title}`, 'analyzing');
+                    break;
+                    
+                case 'analysis_started':
+                    displayLiveAnalysisStart(event.data);
+                    break;
+                    
+                case 'chart_analysis_started':
+                    displayChartAnalysisStart(event.data);
+                    break;
+                    
+                case 'chart_analysis_complete':
+                    displayChartAnalysisComplete(event.data);
+                    break;
+                    
+                case 'dashboard_analysis_started':
+                    updateProgressStep('analyzing', `综合分析: ${event.data.dashboard_title}`, 'analyzing');
+                    break;
+                    
+                case 'dashboard_analysis_complete':
+                    updateProgressStep('complete', `分析完成: ${event.data.dashboard_title}`, 'completed');
+                    displayDashboardAnalysisComplete(event.data);
+                    break;
+                    
+                case 'analysis_complete':
+                    updateProgressStep('complete', `分析完成: ${event.data.dashboard_title}`, 'completed');
+                    displayLiveAnalysisComplete(event.data);
+                    
+                    // 检查是否所有dashboard都分析完成了
+                    checkAllDashboardsCompleted();
+                    break;
+                    
+                case 'analysis_error':
+                    updateProgressStep('error', `分析失败: ${event.data.dashboard_title}`, 'error');
+                    displayLiveAnalysisError(event.data);
+                    
+                    // 检查是否所有dashboard都分析完成了（包括失败的）
+                    checkAllDashboardsCompleted();
+                    break;
+                    
+                case 'combining':
+                    addProgressStep('combining', '综合分析', event.data.message);
+                    break;
+                    
+                case 'final_result':
+                    displayFinalResult(event.data);
+                    addProgressStep('final', '分析完成', '所有看板分析已完成');
+                    break;
+                    
+                case 'no_data':
+                    showError(event.data.answer);
+                    break;
+                    
+                case 'error':
+                    let errorMessage = event.data.error || '分析过程中出现错误';
+                    if (!errorMessage || errorMessage.trim() === '') {
+                        errorMessage = '分析过程中出现未知错误，请检查网络连接或稍后重试。';
+                    }
+                    
+                    // Special handling for timeout errors
+                    if (errorMessage.includes('超时') || errorMessage.toLowerCase().includes('timeout')) {
+                        errorMessage += '\n\n💡 小贴士：超时通常是因为看板数据量过大或网络连接缓慢。您可以：\n• 稍后重试\n• 检查网络连接\n• 考虑分析单个看板而不是多个看板';
+                    }
+                    
+                    showError(errorMessage);
+                    break;
+                    
+                case 'complete':
+                    // Analysis completed successfully
+                    break;
+            }
+        }
+
+        function addProgressStep(id, title, description) {
+            const progressSteps = document.getElementById('progressSteps');
+            const stepElement = document.createElement('div');
+            stepElement.className = 'progress-step active';
+            stepElement.id = `step-${id}`;
+            
+            stepElement.innerHTML = `
+                <div class="step-icon active">●</div>
+                <div class="step-content">
+                    <div class="step-title">${title}</div>
+                    <div class="step-description">${description}</div>
+                </div>
+            `;
+            
+            progressSteps.appendChild(stepElement);
+            updateProgress();
+        }
+
+        function updateProgressStep(id, title, status) {
+            const stepElement = document.getElementById(`step-${id}`) || 
+                               document.querySelector(`.progress-step.active:last-child`);
+            
+            if (stepElement) {
+                const stepTitle = stepElement.querySelector('.step-title');
+                const stepIcon = stepElement.querySelector('.step-icon');
+                
+                stepTitle.textContent = title;
+                
+                // Update status
+                stepElement.className = `progress-step ${status}`;
+                stepIcon.className = `step-icon ${status}`;
+                
+                if (status === 'completed') {
+                    stepIcon.textContent = '✓';
+                } else if (status === 'error') {
+                    stepIcon.textContent = '✗';
+                } else {
+                    stepIcon.textContent = '●';
+                }
+                
+                updateProgress();
+            }
+        }
+
+        function updateProgress() {
+            if (totalSteps === 0) return;
+            
+            const completedSteps = document.querySelectorAll('.progress-step.completed').length;
+            const activeSteps = document.querySelectorAll('.progress-step.active').length;
+            const progress = Math.min(((completedSteps + activeSteps * 0.5) / totalSteps) * 100, 100);
+            
+            document.getElementById('progressFill').style.width = progress + '%';
+        }
+
+
+        function displayLiveAnalysisStart(data) {
+            const analysisLive = document.getElementById('analysisLive');
+            const liveContainer = document.getElementById('liveAnalysisContainer');
+            
+            analysisLive.style.display = 'block';
+            
+            // Create live analysis element
+            const liveElement = document.createElement('div');
+            liveElement.className = 'analysis-live-content';
+            liveElement.setAttribute('data-live-dashboard', data.dashboard_title);
+            liveElement.style.opacity = '0';
+            liveElement.style.transform = 'translateY(20px)';
+            
+            // Build visual side (left) - 缩小的dashboard截图
+            let visualHtml = '';
+            if (data.dashboard_screenshot) {
+                // Handle both relative and absolute paths
+                let screenshotUrl = data.dashboard_screenshot;
+                if (screenshotUrl.startsWith('screenshots/')) {
+                    screenshotUrl = screenshotUrl; // Already relative
+                } else {
+                    screenshotUrl = screenshotUrl; // Keep as is
+                }
+                visualHtml = `
+                    <div class="analysis-visual">
+                        <div class="analysis-visual-title">📊 ${data.dashboard_title}</div>
+                        <img src="/${screenshotUrl}" alt="${data.dashboard_title}" loading="lazy">
+                    </div>
+                `;
+            } else {
+                visualHtml = `
+                    <div class="analysis-visual">
+                        <div class="analysis-visual-title">📊 ${data.dashboard_title}</div>
+                        <div style="text-align: center; padding: 40px; color: #666; background: #f8f9fa; border-radius: 8px;">
+                            <div style="font-size: 2em; margin-bottom: 10px;">📊</div>
+                            <div>看板截图加载中...</div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Build progress side (right) - 分析过程
+            liveElement.innerHTML = `
+                ${visualHtml}
+                <div class="analysis-progress">
+                    <div class="analysis-progress-header">
+                        <div class="analysis-progress-title">🤖 AI 分析中</div>
+                        <div class="analysis-status analyzing">🔄 进行中</div>
+                    </div>
+                    <div class="analysis-steps">
+                        <div class="analysis-step active" data-step="preparing">
+                            <div class="step-icon-small active">●</div>
+                            <div>📋 准备分析数据</div>
+                        </div>
+                        <div class="analysis-step" data-step="encoding">
+                            <div class="step-icon-small waiting">●</div>
+                            <div>🖼️ 处理看板截图</div>
+                        </div>
+                        <div class="analysis-step" data-step="calling">
+                            <div class="step-icon-small waiting">●</div>
+                            <div>🧠 调用 AI 模型</div>
+                        </div>
+                        <div class="analysis-step" data-step="processing">
+                            <div class="step-icon-small waiting">●</div>
+                            <div>💭 生成分析结果</div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 15px; padding: 12px; background: #e3f2fd; border-radius: 8px; font-size: 0.85em; color: #1976d2;">
+                        <div style="font-weight: 600; margin-bottom: 4px;">💡 分析提示</div>
+                        <div>AI 正在分析看板数据，请稍候...</div>
+                    </div>
+                </div>
+            `;
+            
+            liveContainer.appendChild(liveElement);
+            
+            // Animate in
+            setTimeout(() => {
+                liveElement.style.transition = 'all 0.5s ease';
+                liveElement.style.opacity = '1';
+                liveElement.style.transform = 'translateY(0)';
+            }, 100);
+            
+            // Simulate analysis progress
+            simulateAnalysisProgress(data.dashboard_title);
+            
+            // Scroll to view
+            setTimeout(() => {
+                liveElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 200);
+        }
+
+        function simulateAnalysisProgress(dashboardTitle) {
+            const steps = ['preparing', 'encoding', 'calling', 'processing'];
+            let currentStep = 0;
+            
+            const progressInterval = setInterval(() => {
+                if (currentStep >= steps.length) {
+                    clearInterval(progressInterval);
+                    return;
+                }
+                
+                // Update current step to active
+                const currentStepElement = document.querySelector(`[data-live-dashboard="${dashboardTitle}"] .analysis-step[data-step="${steps[currentStep]}"]`);
+                if (currentStepElement) {
+                    currentStepElement.className = 'analysis-step active';
+                    const icon = currentStepElement.querySelector('.step-icon-small');
+                    if (icon) {
+                        icon.className = 'step-icon-small active';
+                        icon.textContent = '●';
+                    }
+                }
+                
+                // Mark previous step as completed
+                if (currentStep > 0) {
+                    const prevStepElement = document.querySelector(`[data-live-dashboard="${dashboardTitle}"] .analysis-step[data-step="${steps[currentStep - 1]}"]`);
+                    if (prevStepElement) {
+                        prevStepElement.className = 'analysis-step completed';
+                        const icon = prevStepElement.querySelector('.step-icon-small');
+                        if (icon) {
+                            icon.className = 'step-icon-small completed';
+                            icon.textContent = '✓';
+                        }
+                    }
+                }
+                
+                currentStep++;
+            }, 1500); // Change step every 1.5 seconds
+        }
+
+        function displayLiveAnalysisComplete(data) {
+            const liveElement = document.querySelector(`[data-live-dashboard="${data.dashboard_title}"]`);
+            if (!liveElement) return;
+            
+            // Update status to completed
+            const statusElement = liveElement.querySelector('.analysis-status');
+            if (statusElement) {
+                statusElement.className = 'analysis-status completed';
+                statusElement.textContent = '✅ 分析完成';
+            }
+            
+            // Mark all steps as completed
+            const steps = liveElement.querySelectorAll('.analysis-step');
+            steps.forEach(step => {
+                step.className = 'analysis-step completed';
+                const icon = step.querySelector('.step-icon-small');
+                if (icon) {
+                    icon.className = 'step-icon-small completed';
+                    icon.textContent = '✓';
+                }
+            });
+            
+            // Add result with better formatting
+            const progressElement = liveElement.querySelector('.analysis-progress');
+            if (progressElement && !liveElement.querySelector('.analysis-result')) {
+                const resultElement = document.createElement('div');
+                resultElement.className = 'analysis-result';
+                const formattedAnalysis = simpleMarkdownToHtml(data.analysis);
+                resultElement.innerHTML = `
+                    <div class="analysis-result-title">🎯 分析结果</div>
+                    ${formattedAnalysis}
+                `;
+                progressElement.appendChild(resultElement);
+            }
+        }
+
+        function displayLiveAnalysisError(data) {
+            const liveElement = document.querySelector(`[data-live-dashboard="${data.dashboard_title}"]`);
+            if (!liveElement) return;
+            
+            // Update status to error
+            const statusElement = liveElement.querySelector('.analysis-status');
+            if (statusElement) {
+                statusElement.className = 'analysis-status error';
+                statusElement.textContent = '❌ 分析失败';
+            }
+            
+            // Mark current step as error
+            const activeStep = liveElement.querySelector('.analysis-step.active');
+            if (activeStep) {
+                activeStep.className = 'analysis-step error';
+                const icon = activeStep.querySelector('.step-icon-small');
+                if (icon) {
+                    icon.className = 'step-icon-small error';
+                    icon.textContent = '✗';
+                }
+            }
+            
+            // Ensure we have a meaningful error message
+            let errorMessage = data.analysis || '分析过程中出现未知错误';
+            if (!errorMessage || errorMessage.trim() === '') {
+                errorMessage = '分析过程中出现未知错误，请检查网络连接或稍后重试。';
+            }
+            
+            // Special handling for timeout errors
+            if (errorMessage.includes('超时') || errorMessage.toLowerCase().includes('timeout')) {
+                errorMessage += '\n\n💡 小贴士：这个看板可能数据量过大或加载缓慢。您可以：\n• 稍后重试分析此看板\n• 检查网络连接\n• 跳过此看板继续分析其他看板';
+            }
+            
+            // Add error result with better formatting
+            const progressElement = liveElement.querySelector('.analysis-progress');
+            if (progressElement && !liveElement.querySelector('.analysis-result')) {
+                const resultElement = document.createElement('div');
+                resultElement.className = 'analysis-result error';
+                const formattedError = simpleMarkdownToHtml(errorMessage);
+                resultElement.innerHTML = `
+                    <div class="analysis-result-title">❌ 分析失败</div>
+                    ${formattedError}
+                `;
+                progressElement.appendChild(resultElement);
+            }
+        }
+
+        function displayChartAnalysisStart(data) {
+            const liveElement = document.querySelector(`[data-live-dashboard="${data.dashboard_title}"]`);
+            if (!liveElement) return;
+            
+            // Update status to show chart analysis
+            const statusElement = liveElement.querySelector('.analysis-status');
+            if (statusElement) {
+                statusElement.textContent = `📊 分析图表 ${data.chart_index + 1}/${data.total_charts}`;
+            }
+            
+            // Add chart analysis step
+            const stepsContainer = liveElement.querySelector('.analysis-steps');
+            if (stepsContainer) {
+                const chartStep = document.createElement('div');
+                chartStep.className = 'analysis-step active';
+                chartStep.setAttribute('data-chart-step', data.chart_index);
+                chartStep.innerHTML = `
+                    <div class="step-icon-small active">●</div>
+                    <div>📈 ${data.chart_title}</div>
+                `;
+                stepsContainer.appendChild(chartStep);
+            }
+            
+            console.log(`📊 开始分析图表: ${data.chart_title}`);
+        }
+        
+        function displayChartAnalysisComplete(data) {
+            const liveElement = document.querySelector(`[data-live-dashboard="${data.dashboard_title}"]`);
+            if (!liveElement) return;
+            
+            // Update chart step to completed
+            const chartStep = liveElement.querySelector(`[data-chart-step="${data.chart_index}"]`);
+            if (chartStep) {
+                chartStep.className = 'analysis-step completed';
+                const icon = chartStep.querySelector('.step-icon-small');
+                if (icon) {
+                    icon.className = 'step-icon-small completed';
+                    icon.textContent = '✓';
+                }
+            }
+            
+            // Create chart analysis result card
+            const chartAnalysisContainer = document.getElementById('chartAnalysisContainer');
+            if (!chartAnalysisContainer) {
+                // Create container if it doesn't exist
+                const container = document.createElement('div');
+                container.id = 'chartAnalysisContainer';
+                container.style.cssText = 'margin-top: 20px;';
+                document.getElementById('analysisLive').appendChild(container);
+            }
+            
+            const chartCard = document.createElement('div');
+            chartCard.className = 'chart-analysis-card';
+            chartCard.style.cssText = `
+                background: white;
+                border-radius: 10px;
+                padding: 20px;
+                margin-bottom: 15px;
+                border-left: 4px solid #28a745;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                opacity: 0;
+                transform: translateY(20px);
+                transition: all 0.5s ease;
+            `;
+            
+            let chartImageHtml = '';
+            if (data.chart_screenshot) {
+                // Handle both relative and absolute paths for chart screenshots
+                let chartScreenshotUrl = data.chart_screenshot;
+                if (chartScreenshotUrl.startsWith('screenshots/')) {
+                    chartScreenshotUrl = chartScreenshotUrl; // Already relative
+                }
+                chartImageHtml = `
+                    <div style="margin-bottom: 15px;">
+                        <img src="/${chartScreenshotUrl}" 
+                             alt="${data.chart_title}" 
+                             style="max-width: 200px; max-height: 150px; border-radius: 8px; border: 1px solid #e0e0e0;"
+                             loading="lazy">
+                    </div>
+                `;
+            }
+            
+            chartCard.innerHTML = `
+                <div style="display: flex; align-items: flex-start; gap: 15px;">
+                    ${chartImageHtml}
+                    <div style="flex: 1;">
+                        <h4 style="margin: 0 0 10px 0; color: #2c3e50; font-size: 1.1em;">
+                            📊 ${data.chart_title}
+                        </h4>
+                        <div style="color: #6c757d; font-size: 0.9em; margin-bottom: 10px;">
+                            来自看板: ${data.dashboard_title} | 图表 ${data.chart_index + 1}/${data.total_charts}
+                        </div>
+                        <div style="line-height: 1.6; color: #2c3e50;">
+                            ${simpleMarkdownToHtml(data.analysis)}
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            chartAnalysisContainer.appendChild(chartCard);
+            
+            // Animate in
+            setTimeout(() => {
+                chartCard.style.opacity = '1';
+                chartCard.style.transform = 'translateY(0)';
+            }, 100);
+            
+            // Scroll to view
+            setTimeout(() => {
+                chartCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 200);
+            
+            console.log(`✅ 图表分析完成: ${data.chart_title}`);
+        }
+        
+        function displayDashboardAnalysisComplete(data) {
+            // This is called when the complete dashboard analysis is done
+            console.log(`🎯 看板综合分析完成: ${data.dashboard_title}`);
+        }
+        
+        // Enhanced markdown to HTML converter for better formatting
+        function simpleMarkdownToHtml(text) {
+            if (!text) return '';
+            
+            let processedText = text;
+            
+            // First, clean any existing HTML tags to avoid double formatting
+            processedText = processedText.replace(/<[^>]+>/g, '');
+            
+            // Handle Chinese numbered lists (一、二、三、 etc.) - use clean HTML tags
+            processedText = processedText.replace(/^[一二三四五六七八九十]+、(.*)$/gm, '<h4>$1</h4>');
+            
+            // Handle numbered lists with dots (1. 2. 3.) - convert to clean headers
+            processedText = processedText.replace(/^(\d+)\.\s+(.*)$/gm, '<h4>$1. $2</h4>');
+            
+            // Handle nested numbered lists (#### 1. etc.)
+            processedText = processedText.replace(/^#{1,4}\s+(\d+)\.\s+(.*)$/gm, '<h6>$1. $2</h6>');
+            
+            // Handle regular markdown headers
+            processedText = processedText
+                .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+                .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+                .replace(/^# (.*$)/gm, '<h1>$1</h1>');
+            
+            // Handle bullet points with dashes
+            processedText = processedText.replace(/^- (.*$)/gm, '<li>$1</li>');
+            
+            // Handle bullet points with • character
+            processedText = processedText.replace(/^• (.*$)/gm, '<li>$1</li>');
+            
+            // Wrap consecutive list items in ul tags
+            processedText = processedText.replace(/(<li[^>]*>.*<\/li>\s*)+/gs, '<ul>$&</ul>');
+            
+            // Handle bold text with double asterisks
+            processedText = processedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            
+            // Handle italic text with single asterisks
+            processedText = processedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
+            
+            // Handle emphasis with special formatting (like "Big Number" in quotes)
+            processedText = processedText.replace(/"([^"]+)"/g, '<strong>"$1"</strong>');
+            
+            // Handle parentheses content for emphasis
+            processedText = processedText.replace(/\(([^)]+)\)/g, ' <span>($1)</span>');
+            
+            // Split into paragraphs by double newlines, but avoid splitting within HTML structures
+            let paragraphs = processedText.split(/\n\n/g);
+            let finalHtml = '';
+            
+            for (let i = 0; i < paragraphs.length; i++) {
+                let paragraph = paragraphs[i].trim();
+                if (!paragraph) continue;
+                
+                // Skip if this is already an HTML block element
+                if (paragraph.match(/^<[h|u|l|p]/i)) {
+                    finalHtml += paragraph + '\n';
+                } else {
+                    // Convert single newlines within paragraphs to <br>
+                    paragraph = paragraph.replace(/\n/g, '<br>');
+                    finalHtml += '<p>' + paragraph + '</p>\n';
+                }
+            }
+            
+            return finalHtml;
+        }
+
+        function displayFinalResult(data) {
+            const finalResult = document.getElementById('finalResult');
+            
+            // Show final result
+            finalResult.style.display = 'block';
+            
+            // Build enhanced stats HTML
+            const statsHtml = `
+                <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+                    <div class="stat-card">
+                        <div class="stat-number">${data.dashboards_analyzed}</div>
+                        <div class="stat-label">分析看板</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${data.total_charts}</div>
+                        <div class="stat-label">分析图表</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${data.individual_analyses ? data.individual_analyses.length : 0}</div>
+                        <div class="stat-label">AI分析次数</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${data.screenshots ? data.screenshots.length : 0}</div>
+                        <div class="stat-label">截图数量</div>
+                    </div>
+                </div>
+            `;
+            
+            // Build expandable dashboard sections
+            let dashboardSectionsHtml = '';
+            if (data.individual_analyses && data.individual_analyses.length > 0) {
+                dashboardSectionsHtml = `
+                    <div style="margin-top: 30px;">
+                        <h3 style="color: var(--primary-color); margin-bottom: 20px; font-size: 1.5em;">
+                            📊 各看板详细分析
+                        </h3>
+                        <div id="dashboardAnalysisSections">
+                            ${data.individual_analyses.map((analysis, index) => createDashboardSection(analysis, index)).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Convert markdown to HTML for better display
+            const formattedAnswer = simpleMarkdownToHtml(data.answer);
+            
+            finalResult.innerHTML = `
+                <div class="final-header">
+                    <div class="final-title">🎯 综合分析结果</div>
+                    <div class="final-badge">AI 驱动</div>
+                </div>
+                ${statsHtml}
+                <div class="final-content">${formattedAnswer}</div>
+                ${dashboardSectionsHtml}
+                <div class="timestamp" style="margin-top: 20px; text-align: center; font-size: 0.85em; color: #6c757d;">
+                    最终分析时间: ${new Date(data.timestamp).toLocaleString()} | 
+                    系统已分析 ${data.dashboards_analyzed} 个看板，${data.total_charts} 个图表
+                </div>
+            `;
+            
+            // Hide progress section
+            document.getElementById('progressSection').style.display = 'none';
+            
+            // 自动收起 analysisLive 模块，避免页面过长
+            const analysisLive = document.getElementById('analysisLive');
+            if (analysisLive) {
+                analysisLive.style.display = 'none';
+            }
+            
+            // Scroll to final result
+            setTimeout(() => {
+                finalResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 300);
+            
+            resetUI();
+        }
+
+        function createDashboardSection(analysis, index) {
+            const dashboardId = `dashboard-${index}`;
+            const supersetUrl = analysis.dashboard_url || '#';
+            const screenshotUrl = analysis.dashboard_screenshot || '';
+            const chartAnalyses = analysis.chart_analyses || [];
+            
+            let chartAnalysesHtml = '';
+            if (chartAnalyses.length > 0) {
+                chartAnalysesHtml = `
+                    <div style="margin-top: 15px;">
+                        <h5 style="color: var(--secondary-color); margin-bottom: 10px;">📈 图表分析</h5>
+                        ${chartAnalyses.map(chart => `
+                            <div class="chart-analysis-item">
+                                <div class="chart-analysis-title">${chart.chart_title}</div>
+                                <div style="font-size: 0.9em; color: var(--text-secondary); line-height: 1.5;">
+                                    ${simpleMarkdownToHtml(chart.analysis)}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+            
+            let screenshotHtml = '';
+            if (screenshotUrl) {
+                screenshotHtml = `
+                    <img src="/${screenshotUrl}" 
+                         alt="${analysis.dashboard_title}" 
+                         class="dashboard-screenshot-preview"
+                         onclick="window.open('/${screenshotUrl}', '_blank')"
+                         title="点击查看大图">
+                `;
+            }
+            
+            return `
+                <div class="analysis-section" id="${dashboardId}">
+                    <div class="analysis-section-header" onclick="toggleDashboardSection('${dashboardId}')">
+                        <div class="analysis-section-title">
+                            <div class="dashboard-icon">${index + 1}</div>
+                            <span>${analysis.dashboard_title}</span>
+                        </div>
+                        <div class="analysis-section-toggle">▼</div>
+                    </div>
+                    <div class="analysis-section-content">
+                        <div class="dashboard-info">
+                            <div class="dashboard-meta">
+                                <div class="dashboard-meta-item">
+                                    <span>📊</span>
+                                    <span>${chartAnalyses.length} 个图表</span>
+                                </div>
+                                <div class="dashboard-meta-item">
+                                    <span>🤖</span>
+                                    <span>AI 分析完成</span>
+                                </div>
+                            </div>
+                            <a href="${supersetUrl}" target="_blank" class="dashboard-link">
+                                <span>🔗</span>
+                                <span>查看看板</span>
+                            </a>
+                        </div>
+                        
+                        ${screenshotHtml}
+                        
+                        <div class="analysis-summary">
+                            <strong>📋 分析概要:</strong><br>
+                            ${simpleMarkdownToHtml(analysis.analysis)}
+                        </div>
+                        
+                        ${chartAnalysesHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        function toggleDashboardSection(sectionId) {
+            const section = document.getElementById(sectionId);
+            if (section) {
+                section.classList.toggle('expanded');
+                
+                // Scroll to section if expanding
+                if (section.classList.contains('expanded')) {
+                    setTimeout(() => {
+                        section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }, 100);
+                }
+            }
+        }
+
+        function showError(message) {
+            const progressSection = document.getElementById('progressSection');
+            
+            // Ensure we have a meaningful error message
+            let displayMessage = message;
+            if (!message || message.trim() === '') {
+                displayMessage = '分析过程中出现未知错误，请检查日志文件或联系技术支持。';
+            }
+            
+            progressSection.innerHTML = `
+                <div class="error-message">
+                    <strong>❌ 分析失败</strong><br>
+                    ${displayMessage}
+                </div>
+            `;
+            progressSection.style.display = 'block';
+            resetUI();
+        }
+
+        function resetUI() {
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            analyzeBtn.disabled = false;
+            analyzeBtn.textContent = '🚀 开始渐进式分析';
+            
+            // Hide live analysis section
+            const analysisLive = document.getElementById('analysisLive');
+            const liveContainer = document.getElementById('liveAnalysisContainer');
+            analysisLive.style.display = 'none';
+            liveContainer.innerHTML = '';
+            
+            // Reset counters
+            completedDashboards = 0;
+            expectedDashboards = 0;
+            
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+        }
+        
+        function checkAllDashboardsCompleted() {
+            completedDashboards++;
+            
+            // 如果所有dashboard都分析完成了，显示收起按钮
+            if (completedDashboards >= expectedDashboards && expectedDashboards > 0) {
+                setTimeout(() => {
+                    const collapseBtn = document.getElementById('collapseLiveBtn');
+                    if (collapseBtn) {
+                        collapseBtn.style.display = 'block';
+                    }
+                }, 1000); // 等待1秒后显示收起按钮
+            }
+        }
+        
+        function toggleAnalysisLive() {
+            const analysisLive = document.getElementById('analysisLive');
+            const collapseBtn = document.getElementById('collapseLiveBtn');
+            
+            if (analysisLive) {
+                const isCollapsed = analysisLive.style.display === 'none';
+                
+                if (isCollapsed) {
+                    // 展开动画
+                    analysisLive.style.display = 'block';
+                    analysisLive.style.transition = 'all 0.5s ease';
+                    analysisLive.style.opacity = '0';
+                    analysisLive.style.transform = 'translateY(-20px)';
+                    
+                    setTimeout(() => {
+                        analysisLive.style.opacity = '1';
+                        analysisLive.style.transform = 'translateY(0)';
+                    }, 50);
+                    
+                    collapseBtn.textContent = '📁 收起';
+                } else {
+                    // 收起动画
+                    analysisLive.style.transition = 'all 0.5s ease';
+                    analysisLive.style.opacity = '0';
+                    analysisLive.style.transform = 'translateY(-20px)';
+                    
+                    setTimeout(() => {
+                        analysisLive.style.display = 'none';
+                    }, 500);
+                    
+                    collapseBtn.textContent = '📂 展开';
+                }
+            }
+        }
+
+        // Enter key support
+        document.getElementById('questionInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                analyzeQuestionProgressive();
+            }
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            if (eventSource) {
+                eventSource.close();
+            }
+        });
+    </script>
+</body>
+</html>

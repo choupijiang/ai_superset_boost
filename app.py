@@ -90,6 +90,27 @@ def get_screenshot_url(screenshot_path):
     filename = os.path.basename(screenshot_path)
     return f'screenshots/{filename}'
 
+def ensure_full_dashboard_url(url):
+    """Ensure dashboard URL is a full URL for proper linking"""
+    if not url:
+        return '#'
+    
+    # If it's already a full URL, return as is
+    if url.startswith('http://') or url.startswith('https://'):
+        return url
+    
+    # Get Superset URL from environment
+    superset_url = os.environ.get('SUPERSET_URL', 'http://localhost:8088')
+    
+    # Remove trailing slash from superset_url if present
+    superset_url = superset_url.rstrip('/')
+    
+    # Handle relative URLs
+    if url.startswith('/'):
+        return f"{superset_url}{url}"
+    else:
+        return f"{superset_url}/{url}"
+
 @app.route('/')
 def index():
     logger.info("📱 用户访问首页")
@@ -412,7 +433,10 @@ async def analyze_question_async(question):
                         'dashboard_title': dashboard_title,
                         'analysis': analysis_result,
                         'dashboard_index': dashboard_index,
-                        'timestamp': datetime.now().isoformat()
+                        'timestamp': datetime.now().isoformat(),
+                        'dashboard_url': dashboard_data.get('url', dashboard_data.get('dashboard_url', '')),
+                        'dashboard_screenshot': dashboard_data.get('screenshot_path', ''),
+                        'chart_analyses': dashboard_data.get('chart_analyses', [])
                     })
                     
                     logger.info(f"✅ 完成Dashboard分析: {dashboard_title}")
@@ -425,7 +449,10 @@ async def analyze_question_async(question):
                         'analysis': f"分析此看板时出现错误：{str(e)}",
                         'dashboard_index': dashboard_index,
                         'timestamp': datetime.now().isoformat(),
-                        'error': True
+                        'error': True,
+                        'dashboard_url': dashboard_data.get('url', dashboard_data.get('dashboard_url', '')),
+                        'dashboard_screenshot': dashboard_data.get('screenshot_path', ''),
+                        'chart_analyses': dashboard_data.get('chart_analyses', [])
                     })
             
             # Capture dashboards progressively (like test_download_all_dashboards.py)
@@ -923,8 +950,9 @@ async def run_progressive_analysis_async(question, event_queue):
                         'analysis': analysis_result,
                         'dashboard_index': dashboard_index,
                         'timestamp': datetime.now().isoformat(),
-                        'dashboard_screenshot': dashboard_data.get('dashboard_screenshot'),
-                        'charts': dashboard_data.get('charts', [])
+                        'dashboard_url': dashboard_data.get('url', dashboard_data.get('dashboard_url', '')),
+                        'dashboard_screenshot': dashboard_data.get('dashboard_screenshot', ''),
+                        'chart_analyses': dashboard_data.get('chart_analyses', [])
                     }
                     individual_analyses.append(analysis_entry)
                     
@@ -952,7 +980,10 @@ async def run_progressive_analysis_async(question, event_queue):
                         'analysis': error_message,
                         'dashboard_index': dashboard_index,
                         'timestamp': datetime.now().isoformat(),
-                        'error': True
+                        'error': True,
+                        'dashboard_url': dashboard_data.get('url', dashboard_data.get('dashboard_url', '')),
+                        'dashboard_screenshot': dashboard_data.get('dashboard_screenshot', ''),
+                        'chart_analyses': dashboard_data.get('chart_analyses', [])
                     }
                     individual_analyses.append(error_entry)
                     
