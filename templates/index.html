@@ -23,18 +23,18 @@
             --error-color: #FF3B30;
             
             /* Neumorphic Background */
-            --dark-bg: #000000;
-            --card-bg: rgba(30, 30, 30, 0.8);
-            --surface-bg: rgba(50, 50, 50, 0.6);
-            --glass-bg: rgba(255, 255, 255, 0.08);
-            --glass-border: rgba(255, 255, 255, 0.12);
+            --dark-bg: #1a1a2e;
+            --card-bg: rgba(245, 247, 250, 0.95);
+            --surface-bg: rgba(255, 255, 255, 0.8);
+            --glass-bg: rgba(255, 255, 255, 0.25);
+            --glass-border: rgba(255, 255, 255, 0.18);
             
             /* Text Hierarchy */
-            --text-primary: #FFFFFF;
-            --text-secondary: #EBEBF5;
-            --text-muted: #8E8E93;
+            --text-primary: #2D3748;
+            --text-secondary: #4A5568;
+            --text-muted: #718096;
             --text-accent: #007AFF;
-            --text-tertiary: #C7C7CC;
+            --text-tertiary: #A0AEC0;
             
             /* Spacing System - Apple Human Interface Guidelines */
             --spacing-xs: 4px;
@@ -77,11 +77,7 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-            background: var(--dark-bg);
-            background-image: 
-                radial-gradient(circle at 20% 30%, rgba(0, 122, 255, 0.08) 0%, transparent 65%),
-                radial-gradient(circle at 85% 60%, rgba(175, 82, 222, 0.06) 0%, transparent 55%),
-                radial-gradient(circle at 45% 85%, rgba(50, 215, 75, 0.05) 0%, transparent 50%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: var(--spacing-lg);
             position: relative;
@@ -103,25 +99,26 @@
             height: 100%;
             background: inherit;
             z-index: -1;
-            animation: backgroundShift 30s ease-in-out infinite;
+            animation: backgroundShift 20s ease-in-out infinite;
         }
 
         @keyframes backgroundShift {
-            0%, 100% { transform: rotate(0deg) scale(1); opacity: 0.3; }
-            50% { transform: rotate(180deg) scale(1.05); opacity: 0.5; }
+            0%, 100% { transform: rotate(0deg) scale(1); opacity: 0.8; }
+            50% { transform: rotate(180deg) scale(1.02); opacity: 0.9; }
         }
 
         .container {
             max-width: 1200px;
             margin: 0 auto;
-            background: var(--gradient-surface);
+            background: var(--card-bg);
             backdrop-filter: blur(var(--blur-xl));
             -webkit-backdrop-filter: blur(var(--blur-xl));
             border-radius: var(--radius-2xl);
             border: 1px solid var(--glass-border);
             box-shadow: 
-                var(--shadow-2xl),
-                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+                0 20px 25px -5px rgba(0, 0, 0, 0.1), 
+                0 10px 10px -5px rgba(0, 0, 0, 0.04),
+                inset 0 1px 0 rgba(255, 255, 255, 0.6);
             overflow: hidden;
             position: relative;
             transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
@@ -144,7 +141,7 @@
         }
 
         .header {
-            background: var(--gradient-glass);
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.8));
             color: var(--text-primary);
             padding: var(--spacing-3xl) var(--spacing-2xl);
             text-align: center;
@@ -163,14 +160,14 @@
             width: 100%;
             height: 100%;
             background: 
-                radial-gradient(circle at 30% 40%, rgba(79, 70, 229, 0.2) 0%, transparent 50%),
-                radial-gradient(circle at 70% 60%, rgba(236, 72, 153, 0.1) 0%, transparent 50%);
+                radial-gradient(circle at 30% 40%, rgba(102, 126, 234, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 70% 60%, rgba(118, 75, 162, 0.08) 0%, transparent 50%);
             animation: headerGlow 6s ease-in-out infinite;
         }
 
         @keyframes headerGlow {
-            0%, 100% { opacity: 0.3; }
-            50% { opacity: 0.6; }
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 0.8; }
         }
 
         .header h1 {
@@ -294,10 +291,33 @@
         }
 
         .analyze-btn:disabled {
-            opacity: 0.6;
+            opacity: 0.8;
             cursor: not-allowed;
             transform: none;
-            animation: pulse 2s infinite;
+            animation: none;
+        }
+        
+        /* AI thinking animation */
+        .ai-thinking-animation {
+            display: inline-block;
+            animation: aiThink 1.5s ease-in-out infinite;
+        }
+        
+        .ai-thinking-text {
+            display: inline-block;
+            animation: aiTextPulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes aiThink {
+            0%, 100% { transform: scale(1) rotate(0deg); }
+            25% { transform: scale(1.1) rotate(-5deg); }
+            50% { transform: scale(1.2) rotate(5deg); }
+            75% { transform: scale(1.1) rotate(-3deg); }
+        }
+        
+        @keyframes aiTextPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
         }
 
         @keyframes pulse {
@@ -732,18 +752,18 @@
         }
 
         .error-message {
-            background: #fff5f5;
-            border: 1px solid #fed7d7;
-            color: #c53030;
+            background: rgba(255, 59, 48, 0.1);
+            border: 1px solid var(--error-color);
+            color: var(--error-color);
             padding: 15px;
             border-radius: 8px;
             margin: 10px 0;
         }
 
         .success-message {
-            background: #f0fff4;
-            border: 1px solid #9ae6b4;
-            color: #2f855a;
+            background: rgba(50, 215, 75, 0.1);
+            border: 1px solid var(--success-color);
+            color: var(--success-color);
             padding: 15px;
             border-radius: 8px;
             margin: 10px 0;
@@ -751,7 +771,7 @@
 
         .timestamp {
             font-size: 0.9em;
-            color: #666;
+            color: var(--text-secondary);
             margin-top: 15px;
             text-align: right;
         }
@@ -1054,13 +1074,13 @@
             align-items: center;
             margin-bottom: 15px;
             padding-bottom: 10px;
-            border-bottom: 2px solid #e9ecef;
+            border-bottom: 2px solid var(--glass-border);
         }
 
         .analysis-progress-title {
             font-size: 1.2em;
             font-weight: 600;
-            color: #2c3e50;
+            color: var(--text-primary);
             flex: 1;
         }
 
@@ -1186,30 +1206,31 @@
         .analysis-result {
             margin-top: 20px;
             padding: 18px;
-            background: #f8f9fa;
+            background: var(--surface-bg);
             border-radius: 10px;
-            border-left: 4px solid #28a745;
+            border-left: 4px solid var(--accent-color);
             line-height: 1.7;
-            color: #2c3e50;
+            color: var(--text-primary);
             font-size: 0.95em;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            box-shadow: var(--shadow-sm);
         }
         
         .analysis-result h4 {
-            border-left: 3px solid #667eea;
+            border-left: 3px solid var(--primary-color);
             padding-left: 10px;
             margin: 15px 0 10px 0;
             font-size: 1.1em;
+            color: var(--text-primary);
         }
         
         .analysis-result h5 {
-            color: #495057;
+            color: var(--text-secondary);
             margin: 12px 0 8px 0;
             font-size: 1em;
         }
         
         .analysis-result h6 {
-            color: #6c757d;
+            color: var(--text-muted);
             margin: 10px 0 6px 0;
             font-size: 0.95em;
         }
@@ -1350,7 +1371,7 @@
         }
 
         .analysis-section.expanded .analysis-section-toggle {
-            transform: rotate(180deg);
+            transform: rotate(90deg);
         }
 
         .analysis-section-content {
@@ -1879,9 +1900,15 @@
 
             // Reset UI
             analyzeBtn.disabled = true;
-            analyzeBtn.textContent = '🔄 分析中...';
+            analyzeBtn.innerHTML = '<span class="ai-thinking-animation">🤖</span><span class="ai-thinking-text">AI正在分析中</span>';
             progressSection.style.display = 'block';
             finalResult.style.display = 'none';
+            
+            // Clear previous results
+            document.getElementById('liveAnalysisContainer').innerHTML = '';
+            document.getElementById('progressSteps').innerHTML = '';
+            document.getElementById('analysisLive').style.display = 'none';
+            document.getElementById('finalResult').innerHTML = '';
             
             // Reset progress
             currentStep = 0;
@@ -1895,18 +1922,7 @@
 
             try {
                 // Start progressive analysis
-                eventSource = new EventSource('/analyze_progressive', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ question: question })
-                });
-
-                // Create a form to send the initial request
-                const formData = new FormData();
-                formData.append('question', question);
-
+                // First send the question via POST
                 fetch('/analyze_progressive', {
                     method: 'POST',
                     headers: {
@@ -2171,7 +2187,7 @@
                             <div>💭 生成分析结果</div>
                         </div>
                     </div>
-                    <div style="margin-top: 15px; padding: 12px; background: #e3f2fd; border-radius: 8px; font-size: 0.85em; color: #1976d2;">
+                    <div style="margin-top: 15px; padding: 12px; background: rgba(0, 122, 255, 0.1); border-radius: 8px; font-size: 0.85em; color: var(--primary-color);">
                         <div style="font-weight: 600; margin-bottom: 4px;">💡 分析提示</div>
                         <div>AI 正在分析看板数据，请稍候...</div>
                     </div>
@@ -2539,6 +2555,9 @@
                         <h3 style="color: var(--primary-color); margin-bottom: 20px; font-size: 1.5em;">
                             📊 各看板详细分析
                         </h3>
+                        <p style="color: var(--text-secondary); margin-bottom: 15px; font-size: 0.9em;">
+                            💡 点击看板标题可收起/展开详细分析
+                        </p>
                         <div id="dashboardAnalysisSections">
                             ${data.individual_analyses.map((analysis, index) => createDashboardSection(analysis, index)).join('')}
                         </div>
@@ -2549,15 +2568,49 @@
             // Convert markdown to HTML for better display
             const formattedAnswer = simpleMarkdownToHtml(data.answer);
             
+            // Debug: Log data to console
+            console.log('Final result data:', data);
+            console.log('Answer:', data.answer);
+            console.log('Formatted answer:', formattedAnswer);
+            console.log('Individual analyses:', data.individual_analyses);
+            console.log('Dashboards analyzed:', data.dashboards_analyzed);
+            
+            // Ensure final-content is always visible, even if answer is empty
+            let finalContentHtml = '';
+            if (formattedAnswer && formattedAnswer.trim() !== '') {
+                finalContentHtml = formattedAnswer;
+            } else if (data.answer && data.answer.trim() !== '') {
+                // If formatted answer is empty but raw answer exists, use it with basic formatting
+                finalContentHtml = '<p>' + data.answer.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>') + '</p>';
+            } else {
+                // Provide a more helpful message when no comprehensive analysis is available
+                finalContentHtml = `
+                    <div style="background: rgba(255, 193, 7, 0.1); border-left: 4px solid #ffc107; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                        <h4 style="color: #856404; margin: 0 0 15px 0;">💡 综合分析说明</h4>
+                        <p style="color: #856404; margin: 0; line-height: 1.6;">
+                            系统已完成所有看板的分析，但综合分析内容暂时不可用。这可能是由于：
+                        </p>
+                        <ul style="color: #856404; margin: 15px 0 0 0; padding-left: 20px;">
+                            <li>AI服务暂时不可用</li>
+                            <li>看板数据量过大</li>
+                            <li>网络连接问题</li>
+                        </ul>
+                        <p style="color: #856404; margin: 15px 0 0 0; line-height: 1.6;">
+                            请查看下方的<strong>各看板详细分析</strong>获取具体的分析结果。
+                        </p>
+                    </div>
+                `;
+            }
+            
             finalResult.innerHTML = `
                 <div class="final-header">
                     <div class="final-title">🎯 综合分析结果</div>
                     <div class="final-badge">AI 驱动</div>
                 </div>
                 ${statsHtml}
-                <div class="final-content">${formattedAnswer}</div>
+                <div class="final-content">${finalContentHtml}</div>
                 ${dashboardSectionsHtml}
-                <div class="timestamp" style="margin-top: 20px; text-align: center; font-size: 0.85em; color: #6c757d;">
+                <div class="timestamp" style="margin-top: 20px; text-align: center; font-size: 0.85em; color: var(--text-muted);">
                     最终分析时间: ${new Date(data.timestamp).toLocaleString()} | 
                     系统已分析 ${data.dashboards_analyzed} 个看板，${data.total_charts} 个图表
                 </div>
@@ -2577,7 +2630,7 @@
                 finalResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }, 300);
             
-            resetUI();
+            // Note: Don't call resetUI() here as it would clear the final result
         }
 
         function createDashboardSection(analysis, index) {
@@ -2595,7 +2648,7 @@
                             <div class="chart-analysis-item">
                                 <div class="chart-analysis-title">${chart.chart_title}</div>
                                 <div style="font-size: 0.9em; color: var(--text-secondary); line-height: 1.5;">
-                                    ${simpleMarkdownToHtml(chart.analysis)}
+                                    ${chart.analysis ? simpleMarkdownToHtml(chart.analysis) : '<span style="color: var(--text-muted); font-style: italic;">图表分析内容不可用</span>'}
                                 </div>
                             </div>
                         `).join('')}
@@ -2621,7 +2674,7 @@
                             <div class="dashboard-icon">${index + 1}</div>
                             <span>${analysis.dashboard_title}</span>
                         </div>
-                        <div class="analysis-section-toggle">▼</div>
+                        <div class="analysis-section-toggle">▶</div>
                     </div>
                     <div class="analysis-section-content">
                         <div class="dashboard-info">
@@ -2645,7 +2698,7 @@
                         
                         <div class="analysis-summary">
                             <strong>📋 分析概要:</strong><br>
-                            ${simpleMarkdownToHtml(analysis.analysis)}
+                            ${analysis.analysis ? simpleMarkdownToHtml(analysis.analysis) : '<span style="color: var(--text-muted); font-style: italic;">分析内容不可用</span>'}
                         </div>
                         
                         ${chartAnalysesHtml}
@@ -2655,16 +2708,23 @@
         }
 
         function toggleDashboardSection(sectionId) {
+            console.log('Toggling section:', sectionId);
             const section = document.getElementById(sectionId);
+            console.log('Found section:', section);
+            
             if (section) {
                 section.classList.toggle('expanded');
+                console.log('Toggled expanded class. Current classes:', section.className);
                 
                 // Scroll to section if expanding
                 if (section.classList.contains('expanded')) {
+                    console.log('Section expanded, scrolling to view');
                     setTimeout(() => {
                         section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                     }, 100);
                 }
+            } else {
+                console.error('Section not found:', sectionId);
             }
         }
 
@@ -2690,13 +2750,17 @@
         function resetUI() {
             const analyzeBtn = document.getElementById('analyzeBtn');
             analyzeBtn.disabled = false;
-            analyzeBtn.textContent = '🚀 开始渐进式分析';
+            analyzeBtn.innerHTML = '<span>🚀</span><span>开始智能分析</span>';
             
             // Hide live analysis section
             const analysisLive = document.getElementById('analysisLive');
             const liveContainer = document.getElementById('liveAnalysisContainer');
             analysisLive.style.display = 'none';
             liveContainer.innerHTML = '';
+            
+            // Clear progress steps but preserve final result
+            document.getElementById('progressSteps').innerHTML = '';
+            document.getElementById('progressSection').style.display = 'none';
             
             // Reset counters
             completedDashboards = 0;
