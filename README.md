@@ -483,7 +483,7 @@ pytest --cov=superset_automation --cov=app --cov=ai_analyzer --cov-report=term-m
 如有问题或建议，请通过以下方式联系：
 
 - **GitHub Issues**: 提交问题和功能请求
-- **Email**: [your-email@example.com]
+- **Email**: [zhangshenghucn@gmail.com]
 
 ## 致谢
 
